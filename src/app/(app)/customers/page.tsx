@@ -25,7 +25,7 @@ export default async function CustomersPage({
 }) {
   await requirePermission("customers.view");
   const { q = "", type = "" } = await searchParams;
-  const customers = listCustomers({ search: q, type });
+  const customers = await listCustomers({ search: q, type });
 
   return (
     <>

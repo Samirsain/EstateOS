@@ -111,35 +111,31 @@ export interface ReportSummary {
   transfers: number;
 }
 
-export function getReportSummary(range: ReportRange): ReportSummary {
-  const db = getDb();
-  const count = (sql: string): number =>
-    (
-      db.prepare(sql).get({ from: range.from, to: range.to }) as {
-        value: number;
-      }
-    ).value;
-
+export async function getReportSummary(range: ReportRange): Promise<ReportSummary> {
+  const db = await getDb();
   const between = "date(created_at) BETWEEN date(@from) AND date(@to)";
+  const args = { from: range.from, to: range.to };
 
-  return {
-    customers: count(
-      `SELECT COUNT(*) AS value FROM customers WHERE ${between}`,
-    ),
-    members: count(`SELECT COUNT(*) AS value FROM members WHERE ${between}`),
-    investors: count(
-      `SELECT COUNT(*) AS value FROM customers WHERE ${between} AND customer_type = 'Investor'`,
-    ),
-    users: count(
-      `SELECT COUNT(*) AS value FROM customers WHERE ${between} AND customer_type = 'User'`,
-    ),
-    duplicatesBlocked: count(
-      `SELECT COUNT(*) AS value FROM duplicate_attempts WHERE ${between}`,
-    ),
-    transfers: count(
-      `SELECT COUNT(*) AS value FROM transfers WHERE ${between}`,
-    ),
+  const count = async (sql: string): Promise<number> => {
+    const result = await db.execute({ sql, args });
+    return Number(result.rows[0]?.value ?? 0);
   };
+
+  const [customers, members, investors, users, duplicatesBlocked, transfers] =
+    await Promise.all([
+      count(`SELECT COUNT(*) AS value FROM customers WHERE ${between}`),
+      count(`SELECT COUNT(*) AS value FROM members WHERE ${between}`),
+      count(
+        `SELECT COUNT(*) AS value FROM customers WHERE ${between} AND customer_type = 'Investor'`,
+      ),
+      count(
+        `SELECT COUNT(*) AS value FROM customers WHERE ${between} AND customer_type = 'User'`,
+      ),
+      count(`SELECT COUNT(*) AS value FROM duplicate_attempts WHERE ${between}`),
+      count(`SELECT COUNT(*) AS value FROM transfers WHERE ${between}`),
+    ]);
+
+  return { customers, members, investors, users, duplicatesBlocked, transfers };
 }
 
 export interface ReportBucket {
@@ -149,32 +145,39 @@ export interface ReportBucket {
   investors: number;
 }
 
-export function getReportBuckets(range: ReportRange): ReportBucket[] {
+export async function getReportBuckets(range: ReportRange): Promise<ReportBucket[]> {
   const format = range.bucket === "month" ? "%Y-%m" : "%Y-%m-%d";
   const between = "date(created_at) BETWEEN date(@from) AND date(@to)";
+  const db = await getDb();
 
-  return getDb()
-    .prepare(
-      `SELECT bucket,
-              SUM(customers)  AS customers,
-              SUM(members)    AS members,
-              SUM(investors)  AS investors
-         FROM (
-           SELECT strftime('${format}', created_at) AS bucket,
-                  COUNT(*) AS customers, 0 AS members,
-                  SUM(CASE WHEN customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
-             FROM customers WHERE ${between}
-            GROUP BY bucket
-           UNION ALL
-           SELECT strftime('${format}', created_at) AS bucket,
-                  0 AS customers, COUNT(*) AS members, 0 AS investors
-             FROM members WHERE ${between}
-            GROUP BY bucket
-         )
-        GROUP BY bucket
-        ORDER BY bucket`,
-    )
-    .all({ from: range.from, to: range.to }) as ReportBucket[];
+  const result = await db.execute({
+    sql: `SELECT bucket,
+                 SUM(customers)  AS customers,
+                 SUM(members)    AS members,
+                 SUM(investors)  AS investors
+            FROM (
+              SELECT strftime('${format}', created_at) AS bucket,
+                     COUNT(*) AS customers, 0 AS members,
+                     SUM(CASE WHEN customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
+                FROM customers WHERE ${between}
+               GROUP BY bucket
+              UNION ALL
+              SELECT strftime('${format}', created_at) AS bucket,
+                     0 AS customers, COUNT(*) AS members, 0 AS investors
+                FROM members WHERE ${between}
+               GROUP BY bucket
+            )
+           GROUP BY bucket
+           ORDER BY bucket`,
+    args: { from: range.from, to: range.to },
+  });
+
+  return result.rows.map((row) => ({
+    bucket: String(row.bucket),
+    customers: Number(row.customers),
+    members: Number(row.members),
+    investors: Number(row.investors),
+  }));
 }
 
 export interface MemberPerformanceRow {
@@ -185,18 +188,28 @@ export interface MemberPerformanceRow {
   investors: number;
 }
 
-export function getMemberPerformance(range: ReportRange): MemberPerformanceRow[] {
-  return getDb()
-    .prepare(
-      `SELECT m.member_code, m.name, m.city,
-              COUNT(c.id) AS customers,
-              SUM(CASE WHEN c.customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
-         FROM members m
-         JOIN customers c
-           ON c.member_id = m.id
-          AND date(c.created_at) BETWEEN date(@from) AND date(@to)
-        GROUP BY m.id
-        ORDER BY customers DESC, m.name COLLATE NOCASE`,
-    )
-    .all({ from: range.from, to: range.to }) as MemberPerformanceRow[];
+export async function getMemberPerformance(
+  range: ReportRange,
+): Promise<MemberPerformanceRow[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT m.member_code, m.name, m.city,
+                 COUNT(c.id) AS customers,
+                 SUM(CASE WHEN c.customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
+            FROM members m
+            JOIN customers c
+              ON c.member_id = m.id
+             AND date(c.created_at) BETWEEN date(@from) AND date(@to)
+           GROUP BY m.id
+           ORDER BY customers DESC, m.name COLLATE NOCASE`,
+    args: { from: range.from, to: range.to },
+  });
+
+  return result.rows.map((row) => ({
+    member_code: String(row.member_code),
+    name: String(row.name),
+    city: row.city === null ? null : String(row.city),
+    customers: Number(row.customers),
+    investors: Number(row.investors),
+  }));
 }

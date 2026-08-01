@@ -69,12 +69,12 @@ export default async function DashboardPage({
   const user = await requireUser();
   const { denied } = await searchParams;
 
-  const stats = getDashboardStats();
-  const growth = getGrowthSeries(30);
-  const topMembers = getTopMembers(8);
-  const recentDuplicates = can(user.role, "audit.view")
-    ? listDuplicateAttempts(5)
-    : [];
+  const [stats, growth, topMembers, recentDuplicates] = await Promise.all([
+    getDashboardStats(),
+    getGrowthSeries(30),
+    getTopMembers(8),
+    can(user.role, "audit.view") ? listDuplicateAttempts(5) : Promise.resolve([]),
+  ]);
 
   return (
     <>

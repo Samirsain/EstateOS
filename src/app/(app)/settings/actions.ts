@@ -37,10 +37,12 @@ export async function createUserAction(
     return { ok: false, message: "Please correct the highlighted fields.", errors };
   }
 
-  const db = getDb();
-  const existing = db
-    .prepare<[string], UserRow>("SELECT * FROM users WHERE username = ?")
-    .get(username);
+  const db = await getDb();
+  const existingResult = await db.execute({
+    sql: "SELECT * FROM users WHERE username = ?",
+    args: [username],
+  });
+  const existing = existingResult.rows[0] as unknown as UserRow | undefined;
 
   if (existing) {
     return {
@@ -50,12 +52,13 @@ export async function createUserAction(
     };
   }
 
-  db.prepare(
-    `INSERT INTO users (username, name, role, password_hash, created_by)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(username, name, role, hashPassword(password), actor.id);
+  await db.execute({
+    sql: `INSERT INTO users (username, name, role, password_hash, created_by)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [username, name, role, hashPassword(password), actor.id],
+  });
 
-  recordAudit({
+  await recordAudit({
     actor,
     action: "user.created",
     entity: "user",
@@ -84,13 +87,15 @@ export async function resetPasswordAction(
     };
   }
 
-  const result = getDb()
-    .prepare("UPDATE users SET password_hash = ? WHERE username = ?")
-    .run(hashPassword(password), username);
+  const db = await getDb();
+  const result = await db.execute({
+    sql: "UPDATE users SET password_hash = ? WHERE username = ?",
+    args: [hashPassword(password), username],
+  });
 
-  if (result.changes === 0) return { ok: false, message: "User not found." };
+  if (result.rowsAffected === 0) return { ok: false, message: "User not found." };
 
-  recordAudit({
+  await recordAudit({
     actor,
     action: "user.password_reset",
     entity: "user",
@@ -109,11 +114,13 @@ export async function setUserActiveAction(formData: FormData): Promise<void> {
   /* The MD cannot lock themselves out of their own console. */
   if (username === actor.username) return;
 
-  getDb()
-    .prepare("UPDATE users SET is_active = ? WHERE username = ?")
-    .run(active, username);
+  const db = await getDb();
+  await db.execute({
+    sql: "UPDATE users SET is_active = ? WHERE username = ?",
+    args: [active, username],
+  });
 
-  recordAudit({
+  await recordAudit({
     actor,
     action: active ? "user.enabled" : "user.disabled",
     entity: "user",

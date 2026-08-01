@@ -21,7 +21,7 @@ export async function createCustomerAction(
   formData: FormData,
 ): Promise<ActionState> {
   const actor = await assertPermission("customers.create");
-  const db = getDb();
+  const db = await getDb();
 
   const name = requireText(formData.get("name"));
   const mobile = normaliseMobile(requireText(formData.get("mobile"), { max: 20 }));
@@ -48,9 +48,11 @@ export async function createCustomerAction(
     return { ok: false, message: "Please correct the highlighted fields.", errors };
   }
 
-  const member = db
-    .prepare<[string], MemberRow>("SELECT * FROM members WHERE member_code = ?")
-    .get(memberCode);
+  const memberResult = await db.execute({
+    sql: "SELECT * FROM members WHERE member_code = ?",
+    args: [memberCode],
+  });
+  const member = memberResult.rows[0] as unknown as MemberRow | undefined;
 
   if (!member) {
     return {
@@ -73,16 +75,18 @@ export async function createCustomerAction(
    * reserved, so a blocked registration never consumes a Customer ID. The
    * matching UNIQUE constraints in the schema are the backstop for races.
    */
-  const mobileClash = db
-    .prepare<[string], CustomerRow & { member_code: string; member_name: string }>(
-      `SELECT c.*, m.member_code, m.name AS member_name
-         FROM customers c JOIN members m ON m.id = c.member_id
-        WHERE c.mobile = ?`,
-    )
-    .get(mobile);
+  const mobileResult = await db.execute({
+    sql: `SELECT c.*, m.member_code, m.name AS member_name
+            FROM customers c JOIN members m ON m.id = c.member_id
+           WHERE c.mobile = ?`,
+    args: [mobile],
+  });
+  const mobileClash = mobileResult.rows[0] as unknown as
+    | (CustomerRow & { member_code: string; member_name: string })
+    | undefined;
 
   if (mobileClash) {
-    recordDuplicateAttempt({
+    await recordDuplicateAttempt({
       field: "mobile",
       entity: "customer",
       maskedValue: mobile,
@@ -90,7 +94,7 @@ export async function createCustomerAction(
       attemptedName: name,
       actor,
     });
-    recordAudit({
+    await recordAudit({
       actor,
       action: "customer.duplicate_blocked",
       entity: "customer",
@@ -105,16 +109,18 @@ export async function createCustomerAction(
   }
 
   const aadhaarIndex = blindIndex(aadhaar);
-  const aadhaarClash = db
-    .prepare<[string], CustomerRow & { member_code: string; member_name: string }>(
-      `SELECT c.*, m.member_code, m.name AS member_name
-         FROM customers c JOIN members m ON m.id = c.member_id
-        WHERE c.aadhaar_index = ?`,
-    )
-    .get(aadhaarIndex);
+  const aadhaarResult = await db.execute({
+    sql: `SELECT c.*, m.member_code, m.name AS member_name
+            FROM customers c JOIN members m ON m.id = c.member_id
+           WHERE c.aadhaar_index = ?`,
+    args: [aadhaarIndex],
+  });
+  const aadhaarClash = aadhaarResult.rows[0] as unknown as
+    | (CustomerRow & { member_code: string; member_name: string })
+    | undefined;
 
   if (aadhaarClash) {
-    recordDuplicateAttempt({
+    await recordDuplicateAttempt({
       field: "aadhaar",
       entity: "customer",
       maskedValue: maskAadhaar(aadhaar),
@@ -122,7 +128,7 @@ export async function createCustomerAction(
       attemptedName: name,
       actor,
     });
-    recordAudit({
+    await recordAudit({
       actor,
       action: "customer.duplicate_blocked",
       entity: "customer",
@@ -136,33 +142,32 @@ export async function createCustomerAction(
     };
   }
 
-  const create = db.transaction((): string => {
-    const code = nextCustomerCode(db);
-    db.prepare(
-      `INSERT INTO customers (
-         customer_code, name, mobile, customer_type, aadhaar_encrypted,
-         aadhaar_index, aadhaar_last4, member_id, invite_code, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      code,
-      name,
-      mobile,
-      customerType,
-      encryptField(aadhaar),
-      aadhaarIndex,
-      aadhaar.slice(-4),
-      member.id,
-      /* Ownership is recorded from the member record, never from client input. */
-      member.invite_code,
-      actor.id,
-    );
-    return code;
-  });
-
+  const tx = await db.transaction("write");
   let customerCode: string;
   try {
-    customerCode = create();
+    customerCode = await nextCustomerCode(tx);
+    await tx.execute({
+      sql: `INSERT INTO customers (
+              customer_code, name, mobile, customer_type, aadhaar_encrypted,
+              aadhaar_index, aadhaar_last4, member_id, invite_code, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        customerCode,
+        name,
+        mobile,
+        customerType,
+        encryptField(aadhaar),
+        aadhaarIndex,
+        aadhaar.slice(-4),
+        member.id,
+        /* Ownership is recorded from the member record, never from client input. */
+        member.invite_code,
+        actor.id,
+      ],
+    });
+    await tx.commit();
   } catch (error) {
+    await tx.rollback().catch(() => {});
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("UNIQUE")) {
       return {
@@ -172,9 +177,11 @@ export async function createCustomerAction(
       };
     }
     throw error;
+  } finally {
+    tx.close();
   }
 
-  recordAudit({
+  await recordAudit({
     actor,
     action: "customer.created",
     entity: "customer",
@@ -207,7 +214,7 @@ export async function transferCustomerAction(
   formData: FormData,
 ): Promise<ActionState> {
   const actor = await assertPermission("customers.transfer");
-  const db = getDb();
+  const db = await getDb();
 
   const customerCode = requireText(formData.get("customerCode"), { max: 40 });
   const toMemberCode = requireText(formData.get("toMemberCode"), { max: 40 });
@@ -217,17 +224,19 @@ export async function transferCustomerAction(
     return { ok: false, message: "Select both a customer and the new member." };
   }
 
-  const customer = db
-    .prepare<[string], CustomerRow>(
-      "SELECT * FROM customers WHERE customer_code = ?",
-    )
-    .get(customerCode);
+  const customerResult = await db.execute({
+    sql: "SELECT * FROM customers WHERE customer_code = ?",
+    args: [customerCode],
+  });
+  const customer = customerResult.rows[0] as unknown as CustomerRow | undefined;
 
   if (!customer) return { ok: false, message: "Customer not found." };
 
-  const toMember = db
-    .prepare<[string], MemberRow>("SELECT * FROM members WHERE member_code = ?")
-    .get(toMemberCode);
+  const toMemberResult = await db.execute({
+    sql: "SELECT * FROM members WHERE member_code = ?",
+    args: [toMemberCode],
+  });
+  const toMember = toMemberResult.rows[0] as unknown as MemberRow | undefined;
 
   if (!toMember) return { ok: false, message: "Destination member not found." };
   if (!toMember.is_active)
@@ -243,22 +252,29 @@ export async function transferCustomerAction(
     };
   }
 
-  const fromMember = db
-    .prepare<[number], MemberRow>("SELECT * FROM members WHERE id = ?")
-    .get(customer.member_id)!;
+  const fromMemberResult = await db.execute({
+    sql: "SELECT * FROM members WHERE id = ?",
+    args: [customer.member_id],
+  });
+  const fromMember = fromMemberResult.rows[0] as unknown as MemberRow;
 
-  db.transaction(() => {
-    db.prepare(
-      "UPDATE customers SET member_id = ?, invite_code = ? WHERE id = ?",
-    ).run(toMember.id, toMember.invite_code, customer.id);
+  const tx = await db.transaction("write");
+  try {
+    await tx.execute({
+      sql: "UPDATE customers SET member_id = ?, invite_code = ? WHERE id = ?",
+      args: [toMember.id, toMember.invite_code, customer.id],
+    });
+    await tx.execute({
+      sql: `INSERT INTO transfers (customer_id, from_member_id, to_member_id, reason, transferred_by)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [customer.id, fromMember.id, toMember.id, reason || null, actor.id],
+    });
+    await tx.commit();
+  } finally {
+    tx.close();
+  }
 
-    db.prepare(
-      `INSERT INTO transfers (customer_id, from_member_id, to_member_id, reason, transferred_by)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(customer.id, fromMember.id, toMember.id, reason || null, actor.id);
-  })();
-
-  recordAudit({
+  await recordAudit({
     actor,
     action: "customer.transferred",
     entity: "customer",

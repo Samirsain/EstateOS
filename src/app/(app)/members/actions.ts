@@ -10,6 +10,7 @@ import {
   maskAadhaar,
 } from "@/lib/crypto";
 import { getDb } from "@/lib/db";
+import type { SqlExecutor } from "@/lib/db";
 import { nextMemberCode } from "@/lib/ids";
 import type { ActionState, MemberRow } from "@/lib/types";
 import { DEALS_IN_OPTIONS } from "@/lib/types";
@@ -73,14 +74,14 @@ function validateMember(input: MemberInput): Record<string, string> {
 }
 
 /** Draws invite codes until an unused one is found. */
-function allocateInviteCode(): string {
-  const db = getDb();
-  const exists = db.prepare<[string], { id: number }>(
-    "SELECT id FROM members WHERE invite_code = ?",
-  );
+async function allocateInviteCode(db: SqlExecutor): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const code = generateInviteCode();
-    if (!exists.get(code)) return code;
+    const result = await db.execute({
+      sql: "SELECT id FROM members WHERE invite_code = ?",
+      args: [code],
+    });
+    if (result.rows.length === 0) return code;
   }
   throw new Error("Could not allocate a unique invite code");
 }
@@ -97,15 +98,17 @@ export async function createMemberAction(
     return { ok: false, message: "Please correct the highlighted fields.", errors };
   }
 
-  const db = getDb();
+  const db = await getDb();
   const aadhaarIndex = blindIndex(input.aadhaar);
 
-  const mobileClash = db
-    .prepare<[string], MemberRow>("SELECT * FROM members WHERE mobile = ?")
-    .get(input.mobile);
+  const mobileResult = await db.execute({
+    sql: "SELECT * FROM members WHERE mobile = ?",
+    args: [input.mobile],
+  });
+  const mobileClash = mobileResult.rows[0] as unknown as MemberRow | undefined;
 
   if (mobileClash) {
-    recordDuplicateAttempt({
+    await recordDuplicateAttempt({
       field: "mobile",
       entity: "member",
       maskedValue: input.mobile,
@@ -113,7 +116,7 @@ export async function createMemberAction(
       attemptedName: input.name,
       actor,
     });
-    recordAudit({
+    await recordAudit({
       actor,
       action: "member.duplicate_blocked",
       entity: "member",
@@ -127,12 +130,14 @@ export async function createMemberAction(
     };
   }
 
-  const aadhaarClash = db
-    .prepare<[string], MemberRow>("SELECT * FROM members WHERE aadhaar_index = ?")
-    .get(aadhaarIndex);
+  const aadhaarResult = await db.execute({
+    sql: "SELECT * FROM members WHERE aadhaar_index = ?",
+    args: [aadhaarIndex],
+  });
+  const aadhaarClash = aadhaarResult.rows[0] as unknown as MemberRow | undefined;
 
   if (aadhaarClash) {
-    recordDuplicateAttempt({
+    await recordDuplicateAttempt({
       field: "aadhaar",
       entity: "member",
       maskedValue: maskAadhaar(input.aadhaar),
@@ -140,7 +145,7 @@ export async function createMemberAction(
       attemptedName: input.name,
       actor,
     });
-    recordAudit({
+    await recordAudit({
       actor,
       action: "member.duplicate_blocked",
       entity: "member",
@@ -159,40 +164,40 @@ export async function createMemberAction(
    * trips a UNIQUE constraint (a concurrent registration between the checks
    * above and here) the sequence number rolls back with it and is not burned.
    */
-  const create = db.transaction((): { code: string; invite: string } => {
-    const code = nextMemberCode(db);
-    const invite = allocateInviteCode();
-
-    db.prepare(
-      `INSERT INTO members (
-         member_code, name, dealer_name, mobile, alternate_mobile, city,
-         company_name, deals_in, experience, aadhaar_encrypted, aadhaar_index,
-         aadhaar_last4, invite_code, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      code,
-      input.name,
-      input.dealerName || null,
-      input.mobile,
-      input.alternateMobile || null,
-      input.city || null,
-      input.companyName || null,
-      JSON.stringify(input.dealsIn),
-      input.experience || null,
-      encryptField(input.aadhaar),
-      aadhaarIndex,
-      input.aadhaar.slice(-4),
-      invite,
-      actor.id,
-    );
-
-    return { code, invite };
-  });
-
+  const tx = await db.transaction("write");
   let created: { code: string; invite: string };
   try {
-    created = create();
+    const code = await nextMemberCode(tx);
+    const invite = await allocateInviteCode(tx);
+
+    await tx.execute({
+      sql: `INSERT INTO members (
+              member_code, name, dealer_name, mobile, alternate_mobile, city,
+              company_name, deals_in, experience, aadhaar_encrypted, aadhaar_index,
+              aadhaar_last4, invite_code, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        code,
+        input.name,
+        input.dealerName || null,
+        input.mobile,
+        input.alternateMobile || null,
+        input.city || null,
+        input.companyName || null,
+        JSON.stringify(input.dealsIn),
+        input.experience || null,
+        encryptField(input.aadhaar),
+        aadhaarIndex,
+        input.aadhaar.slice(-4),
+        invite,
+        actor.id,
+      ],
+    });
+
+    await tx.commit();
+    created = { code, invite };
   } catch (error) {
+    await tx.rollback().catch(() => {});
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("UNIQUE")) {
       return {
@@ -202,9 +207,11 @@ export async function createMemberAction(
       };
     }
     throw error;
+  } finally {
+    tx.close();
   }
 
-  recordAudit({
+  await recordAudit({
     actor,
     action: "member.created",
     entity: "member",
@@ -228,11 +235,13 @@ export async function updateMemberAction(
 ): Promise<ActionState> {
   const actor = await assertPermission("members.edit");
   const code = requireText(formData.get("memberCode"), { max: 40 });
-  const db = getDb();
+  const db = await getDb();
 
-  const existing = db
-    .prepare<[string], MemberRow>("SELECT * FROM members WHERE member_code = ?")
-    .get(code);
+  const existingResult = await db.execute({
+    sql: "SELECT * FROM members WHERE member_code = ?",
+    args: [code],
+  });
+  const existing = existingResult.rows[0] as unknown as MemberRow | undefined;
 
   if (!existing) return { ok: false, message: "Member not found." };
 
@@ -244,12 +253,12 @@ export async function updateMemberAction(
 
   const aadhaarIndex = blindIndex(input.aadhaar);
 
-  const clash = db
-    .prepare<[string, string, number], MemberRow>(
-      `SELECT * FROM members
-        WHERE (mobile = ? OR aadhaar_index = ?) AND id != ?`,
-    )
-    .get(input.mobile, aadhaarIndex, existing.id);
+  const clashResult = await db.execute({
+    sql: `SELECT * FROM members
+           WHERE (mobile = ? OR aadhaar_index = ?) AND id != ?`,
+    args: [input.mobile, aadhaarIndex, existing.id],
+  });
+  const clash = clashResult.rows[0] as unknown as MemberRow | undefined;
 
   if (clash) {
     return {
@@ -258,28 +267,29 @@ export async function updateMemberAction(
     };
   }
 
-  db.prepare(
-    `UPDATE members SET
-       name = ?, dealer_name = ?, mobile = ?, alternate_mobile = ?, city = ?,
-       company_name = ?, deals_in = ?, experience = ?, aadhaar_encrypted = ?,
-       aadhaar_index = ?, aadhaar_last4 = ?
-     WHERE id = ?`,
-  ).run(
-    input.name,
-    input.dealerName || null,
-    input.mobile,
-    input.alternateMobile || null,
-    input.city || null,
-    input.companyName || null,
-    JSON.stringify(input.dealsIn),
-    input.experience || null,
-    encryptField(input.aadhaar),
-    aadhaarIndex,
-    input.aadhaar.slice(-4),
-    existing.id,
-  );
+  await db.execute({
+    sql: `UPDATE members SET
+            name = ?, dealer_name = ?, mobile = ?, alternate_mobile = ?, city = ?,
+            company_name = ?, deals_in = ?, experience = ?, aadhaar_encrypted = ?,
+            aadhaar_index = ?, aadhaar_last4 = ?
+          WHERE id = ?`,
+    args: [
+      input.name,
+      input.dealerName || null,
+      input.mobile,
+      input.alternateMobile || null,
+      input.city || null,
+      input.companyName || null,
+      JSON.stringify(input.dealsIn),
+      input.experience || null,
+      encryptField(input.aadhaar),
+      aadhaarIndex,
+      input.aadhaar.slice(-4),
+      existing.id,
+    ],
+  });
 
-  recordAudit({
+  await recordAudit({
     actor,
     action: "member.updated",
     entity: "member",
@@ -301,12 +311,14 @@ export async function setMemberActiveAction(formData: FormData): Promise<void> {
   const actor = await assertPermission("members.delete");
   const code = requireText(formData.get("memberCode"), { max: 40 });
   const active = formData.get("active") === "1" ? 1 : 0;
+  const db = await getDb();
 
-  getDb()
-    .prepare("UPDATE members SET is_active = ? WHERE member_code = ?")
-    .run(active, code);
+  await db.execute({
+    sql: "UPDATE members SET is_active = ? WHERE member_code = ?",
+    args: [active, code],
+  });
 
-  recordAudit({
+  await recordAudit({
     actor,
     action: active ? "member.reactivated" : "member.deactivated",
     entity: "member",

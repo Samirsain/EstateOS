@@ -12,54 +12,61 @@ export interface MemberListItem extends MemberRow {
   customer_count: number;
 }
 
-export function listMembers(search = ""): MemberListItem[] {
+export async function listMembers(search = ""): Promise<MemberListItem[]> {
   const trimmed = search.trim();
+  const db = await getDb();
 
-  return getDb()
-    .prepare(
-      `SELECT m.*, COUNT(c.id) AS customer_count
-         FROM members m
-         LEFT JOIN customers c ON c.member_id = m.id
-        WHERE (@search = '' OR m.name LIKE @term OR m.mobile LIKE @term
-               OR m.member_code LIKE @term OR m.invite_code LIKE @term
-               OR IFNULL(m.dealer_name, '') LIKE @term
-               OR IFNULL(m.company_name, '') LIKE @term
-               OR IFNULL(m.city, '') LIKE @term)
-        GROUP BY m.id
-        ORDER BY m.id DESC`,
-    )
-    .all({ search: trimmed, term: `%${trimmed}%` }) as MemberListItem[];
+  const result = await db.execute({
+    sql: `SELECT m.*, COUNT(c.id) AS customer_count
+            FROM members m
+            LEFT JOIN customers c ON c.member_id = m.id
+           WHERE (@search = '' OR m.name LIKE @term OR m.mobile LIKE @term
+                  OR m.member_code LIKE @term OR m.invite_code LIKE @term
+                  OR IFNULL(m.dealer_name, '') LIKE @term
+                  OR IFNULL(m.company_name, '') LIKE @term
+                  OR IFNULL(m.city, '') LIKE @term)
+           GROUP BY m.id
+           ORDER BY m.id DESC`,
+    args: { search: trimmed, term: `%${trimmed}%` },
+  });
+
+  return result.rows as unknown as MemberListItem[];
 }
 
-export function getMemberByCode(code: string): MemberListItem | undefined {
-  return getDb()
-    .prepare<[string], MemberListItem>(
-      `SELECT m.*, COUNT(c.id) AS customer_count
-         FROM members m
-         LEFT JOIN customers c ON c.member_id = m.id
-        WHERE m.member_code = ?
-        GROUP BY m.id`,
-    )
-    .get(code);
+export async function getMemberByCode(
+  code: string,
+): Promise<MemberListItem | undefined> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT m.*, COUNT(c.id) AS customer_count
+            FROM members m
+            LEFT JOIN customers c ON c.member_id = m.id
+           WHERE m.member_code = ?
+           GROUP BY m.id`,
+    args: [code],
+  });
+  return result.rows[0] as unknown as MemberListItem | undefined;
 }
 
-export function getMemberById(id: number): MemberRow | undefined {
-  return getDb()
-    .prepare<[number], MemberRow>("SELECT * FROM members WHERE id = ?")
-    .get(id);
+export async function getMemberById(id: number): Promise<MemberRow | undefined> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM members WHERE id = ?",
+    args: [id],
+  });
+  return result.rows[0] as unknown as MemberRow | undefined;
 }
 
 /** Active members, for the "assign to member" dropdown on customer forms. */
-export function listActiveMembersForSelect(): Pick<
-  MemberRow,
-  "id" | "member_code" | "name" | "invite_code" | "mobile"
->[] {
-  return getDb()
-    .prepare(
-      `SELECT id, member_code, name, invite_code, mobile
-         FROM members WHERE is_active = 1 ORDER BY name COLLATE NOCASE`,
-    )
-    .all() as Pick<
+export async function listActiveMembersForSelect(): Promise<
+  Pick<MemberRow, "id" | "member_code" | "name" | "invite_code" | "mobile">[]
+> {
+  const db = await getDb();
+  const result = await db.execute(
+    `SELECT id, member_code, name, invite_code, mobile
+       FROM members WHERE is_active = 1 ORDER BY name COLLATE NOCASE`,
+  );
+  return result.rows as unknown as Pick<
     MemberRow,
     "id" | "member_code" | "name" | "invite_code" | "mobile"
   >[];
@@ -73,7 +80,9 @@ export interface CustomerFilters {
   to?: string;
 }
 
-export function listCustomers(filters: CustomerFilters = {}): CustomerWithMember[] {
+export async function listCustomers(
+  filters: CustomerFilters = {},
+): Promise<CustomerWithMember[]> {
   const search = (filters.search ?? "").trim();
   const term = `%${search}%`;
   const conditions: string[] = [];
@@ -106,33 +115,43 @@ export function listCustomers(filters: CustomerFilters = {}): CustomerWithMember
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const db = await getDb();
 
-  return getDb()
-    .prepare(
-      `SELECT c.*, m.name AS member_name, m.member_code AS member_code
-         FROM customers c
-         JOIN members m ON m.id = c.member_id
-         ${where}
-        ORDER BY c.id DESC`,
-    )
-    .all(params) as CustomerWithMember[];
+  const result = await db.execute({
+    sql: `SELECT c.*, m.name AS member_name, m.member_code AS member_code
+            FROM customers c
+            JOIN members m ON m.id = c.member_id
+            ${where}
+           ORDER BY c.id DESC`,
+    args: params,
+  });
+
+  return result.rows as unknown as CustomerWithMember[];
 }
 
-export function getCustomerByCode(code: string): CustomerWithMember | undefined {
-  return getDb()
-    .prepare<[string], CustomerWithMember>(
-      `SELECT c.*, m.name AS member_name, m.member_code AS member_code
-         FROM customers c
-         JOIN members m ON m.id = c.member_id
-        WHERE c.customer_code = ?`,
-    )
-    .get(code);
+export async function getCustomerByCode(
+  code: string,
+): Promise<CustomerWithMember | undefined> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT c.*, m.name AS member_name, m.member_code AS member_code
+            FROM customers c
+            JOIN members m ON m.id = c.member_id
+           WHERE c.customer_code = ?`,
+    args: [code],
+  });
+  return result.rows[0] as unknown as CustomerWithMember | undefined;
 }
 
-export function getCustomerById(id: number): CustomerRow | undefined {
-  return getDb()
-    .prepare<[number], CustomerRow>("SELECT * FROM customers WHERE id = ?")
-    .get(id);
+export async function getCustomerById(
+  id: number,
+): Promise<CustomerRow | undefined> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM customers WHERE id = ?",
+    args: [id],
+  });
+  return result.rows[0] as unknown as CustomerRow | undefined;
 }
 
 export interface DashboardStats {
@@ -147,31 +166,45 @@ export interface DashboardStats {
   transfers: number;
 }
 
-export function getDashboardStats(): DashboardStats {
-  const db = getDb();
-  const one = (sql: string): number =>
-    (db.prepare(sql).get() as { value: number }).value;
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const db = await getDb();
+  const one = async (sql: string): Promise<number> => {
+    const result = await db.execute(sql);
+    return Number(result.rows[0]?.value ?? 0);
+  };
+
+  const [
+    totalCustomers,
+    totalMembers,
+    investors,
+    users,
+    todayCustomers,
+    todayMembers,
+    duplicateAttempts,
+    duplicateAttemptsToday,
+    transfers,
+  ] = await Promise.all([
+    one("SELECT COUNT(*) AS value FROM customers"),
+    one("SELECT COUNT(*) AS value FROM members"),
+    one("SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'Investor'"),
+    one("SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'User'"),
+    one("SELECT COUNT(*) AS value FROM customers WHERE date(created_at) = date('now')"),
+    one("SELECT COUNT(*) AS value FROM members WHERE date(created_at) = date('now')"),
+    one("SELECT COUNT(*) AS value FROM duplicate_attempts"),
+    one("SELECT COUNT(*) AS value FROM duplicate_attempts WHERE date(created_at) = date('now')"),
+    one("SELECT COUNT(*) AS value FROM transfers"),
+  ]);
 
   return {
-    totalCustomers: one("SELECT COUNT(*) AS value FROM customers"),
-    totalMembers: one("SELECT COUNT(*) AS value FROM members"),
-    investors: one(
-      "SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'Investor'",
-    ),
-    users: one(
-      "SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'User'",
-    ),
-    todayCustomers: one(
-      "SELECT COUNT(*) AS value FROM customers WHERE date(created_at) = date('now')",
-    ),
-    todayMembers: one(
-      "SELECT COUNT(*) AS value FROM members WHERE date(created_at) = date('now')",
-    ),
-    duplicateAttempts: one("SELECT COUNT(*) AS value FROM duplicate_attempts"),
-    duplicateAttemptsToday: one(
-      "SELECT COUNT(*) AS value FROM duplicate_attempts WHERE date(created_at) = date('now')",
-    ),
-    transfers: one("SELECT COUNT(*) AS value FROM transfers"),
+    totalCustomers,
+    totalMembers,
+    investors,
+    users,
+    todayCustomers,
+    todayMembers,
+    duplicateAttempts,
+    duplicateAttemptsToday,
+    transfers,
   };
 }
 
@@ -186,21 +219,27 @@ export interface GrowthPoint {
  * SQL so days with no registrations still appear as zero rather than being
  * dropped from the series.
  */
-export function getGrowthSeries(days = 30): GrowthPoint[] {
-  return getDb()
-    .prepare(
-      `WITH RECURSIVE spine(day, n) AS (
-         SELECT date('now', '-' || (@days - 1) || ' day'), 1
-         UNION ALL
-         SELECT date(day, '+1 day'), n + 1 FROM spine WHERE n < @days
-       )
-       SELECT spine.day AS day,
-              (SELECT COUNT(*) FROM customers WHERE date(created_at) = spine.day) AS customers,
-              (SELECT COUNT(*) FROM members   WHERE date(created_at) = spine.day) AS members
-         FROM spine
-        ORDER BY spine.day`,
-    )
-    .all({ days }) as GrowthPoint[];
+export async function getGrowthSeries(days = 30): Promise<GrowthPoint[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `WITH RECURSIVE spine(day, n) AS (
+            SELECT date('now', '-' || (@days - 1) || ' day'), 1
+            UNION ALL
+            SELECT date(day, '+1 day'), n + 1 FROM spine WHERE n < @days
+          )
+          SELECT spine.day AS day,
+                 (SELECT COUNT(*) FROM customers WHERE date(created_at) = spine.day) AS customers,
+                 (SELECT COUNT(*) FROM members   WHERE date(created_at) = spine.day) AS members
+            FROM spine
+           ORDER BY spine.day`,
+    args: { days },
+  });
+
+  return result.rows.map((row) => ({
+    day: String(row.day),
+    customers: Number(row.customers),
+    members: Number(row.members),
+  }));
 }
 
 export interface TopMember {
@@ -211,33 +250,44 @@ export interface TopMember {
   investors: number;
 }
 
-export function getTopMembers(limit = 8): TopMember[] {
-  return getDb()
-    .prepare<[number], TopMember>(
-      `SELECT m.member_code, m.name, m.city,
-              COUNT(c.id) AS customers,
-              SUM(CASE WHEN c.customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
-         FROM members m
-         LEFT JOIN customers c ON c.member_id = m.id
-        GROUP BY m.id
-       HAVING customers > 0
-        ORDER BY customers DESC, m.name COLLATE NOCASE
-        LIMIT ?`,
-    )
-    .all(limit);
+export async function getTopMembers(limit = 8): Promise<TopMember[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT m.member_code, m.name, m.city,
+                 COUNT(c.id) AS customers,
+                 SUM(CASE WHEN c.customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
+            FROM members m
+            LEFT JOIN customers c ON c.member_id = m.id
+           GROUP BY m.id
+          HAVING customers > 0
+           ORDER BY customers DESC, m.name COLLATE NOCASE
+           LIMIT ?`,
+    args: [limit],
+  });
+
+  return result.rows.map((row) => ({
+    member_code: String(row.member_code),
+    name: String(row.name),
+    city: row.city === null ? null : String(row.city),
+    customers: Number(row.customers),
+    investors: Number(row.investors),
+  }));
 }
 
-export function listDuplicateAttempts(limit = 100): (DuplicateAttemptRow & {
-  attempted_by_name: string | null;
-})[] {
-  return getDb()
-    .prepare<[number], DuplicateAttemptRow & { attempted_by_name: string | null }>(
-      `SELECT d.*, u.name AS attempted_by_name
-         FROM duplicate_attempts d
-         LEFT JOIN users u ON u.id = d.attempted_by
-        ORDER BY d.id DESC LIMIT ?`,
-    )
-    .all(limit);
+export async function listDuplicateAttempts(
+  limit = 100,
+): Promise<(DuplicateAttemptRow & { attempted_by_name: string | null })[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT d.*, u.name AS attempted_by_name
+            FROM duplicate_attempts d
+            LEFT JOIN users u ON u.id = d.attempted_by
+           ORDER BY d.id DESC LIMIT ?`,
+    args: [limit],
+  });
+  return result.rows as unknown as (DuplicateAttemptRow & {
+    attempted_by_name: string | null;
+  })[];
 }
 
 export interface AuditFilters {
@@ -246,7 +296,9 @@ export interface AuditFilters {
   limit?: number;
 }
 
-export function listAuditLogs(filters: AuditFilters = {}): AuditLogRow[] {
+export async function listAuditLogs(
+  filters: AuditFilters = {},
+): Promise<AuditLogRow[]> {
   const conditions: string[] = [];
   const params: Record<string, string | number> = {
     limit: filters.limit ?? 200,
@@ -262,12 +314,14 @@ export function listAuditLogs(filters: AuditFilters = {}): AuditLogRow[] {
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const db = await getDb();
 
-  return getDb()
-    .prepare(
-      `SELECT * FROM audit_logs ${where} ORDER BY id DESC LIMIT @limit`,
-    )
-    .all(params) as AuditLogRow[];
+  const result = await db.execute({
+    sql: `SELECT * FROM audit_logs ${where} ORDER BY id DESC LIMIT @limit`,
+    args: params,
+  });
+
+  return result.rows as unknown as AuditLogRow[];
 }
 
 export interface TransferListItem {
@@ -283,26 +337,63 @@ export interface TransferListItem {
   created_at: string;
 }
 
-export function listTransfers(limit = 100): TransferListItem[] {
-  return getDb()
-    .prepare<[number], TransferListItem>(
-      `SELECT t.id, t.reason, t.created_at,
-              c.customer_code, c.name AS customer_name,
-              f.member_code AS from_code, f.name AS from_name,
-              g.member_code AS to_code,   g.name AS to_name,
-              u.name AS transferred_by_name
-         FROM transfers t
-         JOIN customers c ON c.id = t.customer_id
-         JOIN members   f ON f.id = t.from_member_id
-         JOIN members   g ON g.id = t.to_member_id
-         JOIN users     u ON u.id = t.transferred_by
-        ORDER BY t.id DESC LIMIT ?`,
-    )
-    .all(limit);
+export async function listTransfers(limit = 100): Promise<TransferListItem[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT t.id, t.reason, t.created_at,
+                 c.customer_code, c.name AS customer_name,
+                 f.member_code AS from_code, f.name AS from_name,
+                 g.member_code AS to_code,   g.name AS to_name,
+                 u.name AS transferred_by_name
+            FROM transfers t
+            JOIN customers c ON c.id = t.customer_id
+            JOIN members   f ON f.id = t.from_member_id
+            JOIN members   g ON g.id = t.to_member_id
+            JOIN users     u ON u.id = t.transferred_by
+           ORDER BY t.id DESC LIMIT ?`,
+    args: [limit],
+  });
+
+  return result.rows as unknown as TransferListItem[];
 }
 
-export function listUsers(): UserRow[] {
-  return getDb()
-    .prepare("SELECT * FROM users ORDER BY role, username COLLATE NOCASE")
-    .all() as UserRow[];
+export interface CustomerTransferHistoryRow {
+  id: number;
+  customer_id: number;
+  from_member_id: number;
+  to_member_id: number;
+  reason: string | null;
+  transferred_by: number;
+  created_at: string;
+  from_code: string;
+  from_name: string;
+  to_code: string;
+  to_name: string;
+  actor_name: string;
+}
+
+export async function listTransfersForCustomer(
+  customerId: number,
+): Promise<CustomerTransferHistoryRow[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT t.*, f.member_code AS from_code, f.name AS from_name,
+                 g.member_code AS to_code, g.name AS to_name, u.name AS actor_name
+            FROM transfers t
+            JOIN members f ON f.id = t.from_member_id
+            JOIN members g ON g.id = t.to_member_id
+            JOIN users   u ON u.id = t.transferred_by
+           WHERE t.customer_id = ?
+           ORDER BY t.id DESC`,
+    args: [customerId],
+  });
+  return result.rows as unknown as CustomerTransferHistoryRow[];
+}
+
+export async function listUsers(): Promise<UserRow[]> {
+  const db = await getDb();
+  const result = await db.execute(
+    "SELECT * FROM users ORDER BY role, username COLLATE NOCASE",
+  );
+  return result.rows as unknown as UserRow[];
 }

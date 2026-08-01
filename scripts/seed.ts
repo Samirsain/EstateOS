@@ -78,146 +78,169 @@ function dateOf(days: number): Date {
   return date;
 }
 
-const db = getDb();
+async function main() {
+  const db = await getDb();
 
-const existing = db
-  .prepare("SELECT COUNT(*) AS count FROM members")
-  .get() as { count: number };
+  const existingResult = await db.execute("SELECT COUNT(*) AS count FROM members");
+  const existingCount = Number(existingResult.rows[0]?.count ?? 0);
 
-if (existing.count > 0) {
-  console.log(`Database already has ${existing.count} members — nothing to seed.`);
-  process.exit(0);
-}
+  if (existingCount > 0) {
+    console.log(`Database already has ${existingCount} members — nothing to seed.`);
+    return;
+  }
 
-const md = db.prepare("SELECT * FROM users WHERE role = 'MD' LIMIT 1").get() as {
-  id: number;
-};
+  const mdResult = await db.execute(
+    "SELECT * FROM users WHERE role = 'MD' LIMIT 1",
+  );
+  const md = mdResult.rows[0] as unknown as { id: number };
 
-/* The MD creates the PC account (PRD §5, step 1). */
-const pcUsername = "pc";
-const pcPassword = "Office@123";
+  /* The MD creates the PC account (PRD §5, step 1). */
+  const pcUsername = "pc";
+  const pcPassword = "Office@123";
 
-const pcExists = db
-  .prepare("SELECT id FROM users WHERE username = ?")
-  .get(pcUsername) as { id: number } | undefined;
+  const pcExistsResult = await db.execute({
+    sql: "SELECT id FROM users WHERE username = ?",
+    args: [pcUsername],
+  });
+  const pcExists = pcExistsResult.rows[0] as unknown as { id: number } | undefined;
 
-const pcId =
-  pcExists?.id ??
-  (db
-    .prepare(
-      `INSERT INTO users (username, name, role, password_hash, created_by)
-       VALUES (?, ?, 'PC', ?, ?)`,
-    )
-    .run(pcUsername, "Office Coordinator", hashPassword(pcPassword), md.id)
-    .lastInsertRowid as number);
+  let pcId: number;
+  if (pcExists) {
+    pcId = pcExists.id;
+  } else {
+    const insertResult = await db.execute({
+      sql: `INSERT INTO users (username, name, role, password_hash, created_by)
+            VALUES (?, ?, 'PC', ?, ?)`,
+      args: [pcUsername, "Office Coordinator", hashPassword(pcPassword), md.id],
+    });
+    pcId = Number(insertResult.lastInsertRowid);
+  }
 
-db.prepare(
-  `INSERT INTO audit_logs (actor_id, actor_name, actor_role, action, entity, entity_ref)
-   VALUES (?, 'Managing Director', 'MD', 'user.created', 'user', ?)`,
-).run(md.id, pcUsername);
+  await db.execute({
+    sql: `INSERT INTO audit_logs (actor_id, actor_name, actor_role, action, entity, entity_ref)
+          VALUES (?, 'Managing Director', 'MD', 'user.created', 'user', ?)`,
+    args: [md.id, pcUsername],
+  });
 
-const memberIds: number[] = [];
+  const memberIds: number[] = [];
 
-MEMBERS.forEach((member, index) => {
-  const registeredDaysAgo = 28 - index * 4;
-  const code = nextMemberCode(db, dateOf(registeredDaysAgo));
-  const aadhaar = makeAadhaar(index + 1);
+  for (const [index, member] of MEMBERS.entries()) {
+    const registeredDaysAgo = 28 - index * 4;
+    const code = await nextMemberCode(db, dateOf(registeredDaysAgo));
+    const aadhaar = makeAadhaar(index + 1);
 
-  const result = db
-    .prepare(
-      `INSERT INTO members (
-         member_code, name, dealer_name, mobile, alternate_mobile, city,
-         company_name, deals_in, experience, aadhaar_encrypted, aadhaar_index,
-         aadhaar_last4, invite_code, created_at, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      code,
-      member.name,
-      member.dealer,
-      `98${String(10000000 + index * 111111).slice(0, 8)}`,
-      index % 2 === 0 ? `97${String(20000000 + index * 222222).slice(0, 8)}` : null,
-      member.city,
-      member.company,
-      JSON.stringify(member.deals),
-      member.exp,
-      encryptField(aadhaar),
-      blindIndex(aadhaar),
-      aadhaar.slice(-4),
-      generateInviteCode(),
-      daysAgo(registeredDaysAgo),
-      pcId,
-    );
+    const result = await db.execute({
+      sql: `INSERT INTO members (
+              member_code, name, dealer_name, mobile, alternate_mobile, city,
+              company_name, deals_in, experience, aadhaar_encrypted, aadhaar_index,
+              aadhaar_last4, invite_code, created_at, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        code,
+        member.name,
+        member.dealer,
+        `98${String(10000000 + index * 111111).slice(0, 8)}`,
+        index % 2 === 0 ? `97${String(20000000 + index * 222222).slice(0, 8)}` : null,
+        member.city,
+        member.company,
+        JSON.stringify(member.deals),
+        member.exp,
+        encryptField(aadhaar),
+        blindIndex(aadhaar),
+        aadhaar.slice(-4),
+        generateInviteCode(),
+        daysAgo(registeredDaysAgo),
+        pcId,
+      ],
+    });
 
-  memberIds.push(result.lastInsertRowid as number);
+    memberIds.push(Number(result.lastInsertRowid));
 
-  db.prepare(
-    `INSERT INTO audit_logs (actor_id, actor_name, actor_role, action, entity, entity_ref, created_at)
-     VALUES (?, 'Office Coordinator', 'PC', 'member.created', 'member', ?, ?)`,
-  ).run(pcId, code, daysAgo(registeredDaysAgo));
-});
+    await db.execute({
+      sql: `INSERT INTO audit_logs (actor_id, actor_name, actor_role, action, entity, entity_ref, created_at)
+            VALUES (?, 'Office Coordinator', 'PC', 'member.created', 'member', ?, ?)`,
+      args: [pcId, code, daysAgo(registeredDaysAgo)],
+    });
+  }
 
-CUSTOMER_NAMES.forEach((name, index) => {
-  /* Weight referrals so the "top performing members" chart has a real shape. */
-  const memberIndex =
-    index % 9 === 0 ? 0 : index % 5 === 0 ? 1 : index % 3 === 0 ? 2 : index % 6;
-  const memberRow = db
-    .prepare("SELECT id, invite_code FROM members WHERE id = ?")
-    .get(memberIds[Math.min(memberIndex, memberIds.length - 1)]) as {
-    id: number;
-    invite_code: string;
+  for (const [index, name] of CUSTOMER_NAMES.entries()) {
+    /* Weight referrals so the "top performing members" chart has a real shape. */
+    const memberIndex =
+      index % 9 === 0 ? 0 : index % 5 === 0 ? 1 : index % 3 === 0 ? 2 : index % 6;
+    const memberRowResult = await db.execute({
+      sql: "SELECT id, invite_code FROM members WHERE id = ?",
+      args: [memberIds[Math.min(memberIndex, memberIds.length - 1)]],
+    });
+    const memberRow = memberRowResult.rows[0] as unknown as {
+      id: number;
+      invite_code: string;
+    };
+
+    const registeredDaysAgo = Math.max(0, 24 - Math.floor(index * 0.95));
+    const code = await nextCustomerCode(db, dateOf(registeredDaysAgo));
+    const aadhaar = makeAadhaar(index + 100);
+
+    await db.execute({
+      sql: `INSERT INTO customers (
+              customer_code, name, mobile, customer_type, aadhaar_encrypted,
+              aadhaar_index, aadhaar_last4, member_id, invite_code, created_at, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        code,
+        name,
+        `9${String(100000000 + index * 1234567).slice(0, 9)}`,
+        index % 4 === 0 ? "Investor" : "User",
+        encryptField(aadhaar),
+        blindIndex(aadhaar),
+        aadhaar.slice(-4),
+        memberRow.id,
+        memberRow.invite_code,
+        daysAgo(registeredDaysAgo),
+        pcId,
+      ],
+    });
+
+    await db.execute({
+      sql: `INSERT INTO audit_logs (actor_id, actor_name, actor_role, action, entity, entity_ref, created_at)
+            VALUES (?, 'Office Coordinator', 'PC', 'customer.created', 'customer', ?, ?)`,
+      args: [pcId, code, daysAgo(registeredDaysAgo)],
+    });
+  }
+
+  /* A couple of blocked duplicate attempts so the dashboard card is meaningful. */
+  const firstCustomerResult = await db.execute(
+    "SELECT customer_code, mobile, aadhaar_last4 FROM customers LIMIT 1",
+  );
+  const firstCustomer = firstCustomerResult.rows[0] as unknown as {
+    customer_code: string;
+    mobile: string;
+    aadhaar_last4: string;
   };
 
-  const registeredDaysAgo = Math.max(0, 24 - Math.floor(index * 0.95));
-  const code = nextCustomerCode(db, dateOf(registeredDaysAgo));
-  const aadhaar = makeAadhaar(index + 100);
+  await db.execute({
+    sql: `INSERT INTO duplicate_attempts (field, entity, masked_value, existing_code, attempted_name, attempted_by, created_at)
+          VALUES ('mobile', 'customer', ?, ?, 'Anil Gupta', ?, ?)`,
+    args: [firstCustomer.mobile, firstCustomer.customer_code, pcId, daysAgo(3)],
+  });
 
-  db.prepare(
-    `INSERT INTO customers (
-       customer_code, name, mobile, customer_type, aadhaar_encrypted,
-       aadhaar_index, aadhaar_last4, member_id, invite_code, created_at, created_by
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    code,
-    name,
-    `9${String(100000000 + index * 1234567).slice(0, 9)}`,
-    index % 4 === 0 ? "Investor" : "User",
-    encryptField(aadhaar),
-    blindIndex(aadhaar),
-    aadhaar.slice(-4),
-    memberRow.id,
-    memberRow.invite_code,
-    daysAgo(registeredDaysAgo),
-    pcId,
-  );
+  await db.execute({
+    sql: `INSERT INTO duplicate_attempts (field, entity, masked_value, existing_code, attempted_name, attempted_by, created_at)
+          VALUES ('aadhaar', 'customer', ?, ?, 'A. Gupta', ?, ?)`,
+    args: [
+      `XXXX XXXX ${firstCustomer.aadhaar_last4}`,
+      firstCustomer.customer_code,
+      pcId,
+      daysAgo(1),
+    ],
+  });
 
-  db.prepare(
-    `INSERT INTO audit_logs (actor_id, actor_name, actor_role, action, entity, entity_ref, created_at)
-     VALUES (?, 'Office Coordinator', 'PC', 'customer.created', 'customer', ?, ?)`,
-  ).run(pcId, code, daysAgo(registeredDaysAgo));
+  console.log("Seeded demo data.");
+  console.log(`  MD login: md / ${process.env.CMMS_MD_PASSWORD ?? "ChangeMe@123"}`);
+  console.log(`  PC login: ${pcUsername} / ${pcPassword}`);
+  console.log(`  ${MEMBERS.length} members, ${CUSTOMER_NAMES.length} customers.`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });
-
-/* A couple of blocked duplicate attempts so the dashboard card is meaningful. */
-const firstCustomer = db
-  .prepare("SELECT customer_code, mobile, aadhaar_last4 FROM customers LIMIT 1")
-  .get() as { customer_code: string; mobile: string; aadhaar_last4: string };
-
-db.prepare(
-  `INSERT INTO duplicate_attempts (field, entity, masked_value, existing_code, attempted_name, attempted_by, created_at)
-   VALUES ('mobile', 'customer', ?, ?, 'Anil Gupta', ?, ?)`,
-).run(firstCustomer.mobile, firstCustomer.customer_code, pcId, daysAgo(3));
-
-db.prepare(
-  `INSERT INTO duplicate_attempts (field, entity, masked_value, existing_code, attempted_name, attempted_by, created_at)
-   VALUES ('aadhaar', 'customer', ?, ?, 'A. Gupta', ?, ?)`,
-).run(
-  `XXXX XXXX ${firstCustomer.aadhaar_last4}`,
-  firstCustomer.customer_code,
-  pcId,
-  daysAgo(1),
-);
-
-console.log("Seeded demo data.");
-console.log(`  MD login: md / ${process.env.CMMS_MD_PASSWORD ?? "ChangeMe@123"}`);
-console.log(`  PC login: ${pcUsername} / ${pcPassword}`);
-console.log(`  ${MEMBERS.length} members, ${CUSTOMER_NAMES.length} customers.`);

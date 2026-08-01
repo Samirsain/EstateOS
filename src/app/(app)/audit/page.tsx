@@ -42,8 +42,8 @@ export default async function AuditPage({
   await requirePermission("audit.view");
   const { action = "" } = await searchParams;
 
-  const logs = listAuditLogs({ action: action || undefined, limit: 250 });
-  const duplicates = listDuplicateAttempts(50);
+  const logs = await listAuditLogs({ action: action || undefined, limit: 250 });
+  const duplicates = await listDuplicateAttempts(50);
 
   return (
     <>

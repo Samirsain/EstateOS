@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         "Status",
         "Registered on",
       ];
-      rows = listMembers().map((member) => [
+      rows = (await listMembers()).map((member) => [
         member.member_code,
         member.name,
         member.dealer_name,
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
         "Reason",
         "Transferred by",
       ];
-      rows = listTransfers(1000).map((transfer) => [
+      rows = (await listTransfers(1000)).map((transfer) => [
         transfer.created_at,
         transfer.customer_code,
         transfer.customer_name,
@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Not permitted" }, { status: 403 });
       }
       headers = ["Date", "Actor", "Role", "Action", "Entity", "Reference", "Details"];
-      rows = listAuditLogs({ limit: 5000 }).map((log) => [
+      rows = (await listAuditLogs({ limit: 5000 })).map((log) => [
         log.created_at,
         log.actor_name,
         log.actor_role,
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
 
     case "member-performance": {
       headers = ["Member ID", "Name", "City", "Customers", "Investors"];
-      rows = getMemberPerformance(range).map((row) => [
+      rows = (await getMemberPerformance(range)).map((row) => [
         row.member_code,
         row.name,
         row.city,
@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
         "Invite code",
         "Registered on",
       ];
-      rows = listCustomers({ from: range.from, to: range.to }).map((customer) => [
+      rows = (await listCustomers({ from: range.from, to: range.to })).map((customer) => [
         customer.customer_code,
         customer.name,
         customer.mobile,
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  recordAudit({
+  await recordAudit({
     actor: user,
     action: "report.exported",
     entity: dataset,

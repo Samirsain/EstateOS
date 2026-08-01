@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { SqlExecutor } from "./db";
 
 export const CUSTOMER_PREFIX = "TM";
 export const MEMBER_PREFIX = "3C";
@@ -15,30 +15,30 @@ export function formatIdDate(date: Date = new Date()): string {
  * `<prefix><seq>-<DDMMYYYY>` — e.g. TM0001-29072026 or 3C0001-29072026.
  *
  * The counter is stored per prefix and never reset, so sequence numbers are
- * strictly increasing and an ID can never be reissued. The caller must run this
- * inside the same transaction as the INSERT that consumes the ID; otherwise a
- * failed insert would burn a sequence number.
+ * strictly increasing and an ID can never be reissued. The caller must run
+ * this inside the same transaction as the INSERT that consumes the ID;
+ * otherwise a failed insert would burn a sequence number.
  */
-export function nextCode(
-  db: Database,
+export async function nextCode(
+  db: SqlExecutor,
   prefix: string,
   date: Date = new Date(),
-): string {
-  const row = db
-    .prepare<[string], { last_seq: number }>(
-      `INSERT INTO id_sequences (prefix, last_seq) VALUES (?, 1)
-       ON CONFLICT(prefix) DO UPDATE SET last_seq = last_seq + 1
-       RETURNING last_seq`,
-    )
-    .get(prefix)!;
+): Promise<string> {
+  const result = await db.execute({
+    sql: `INSERT INTO id_sequences (prefix, last_seq) VALUES (?, 1)
+          ON CONFLICT(prefix) DO UPDATE SET last_seq = last_seq + 1
+          RETURNING last_seq`,
+    args: [prefix],
+  });
 
-  return `${prefix}${String(row.last_seq).padStart(4, "0")}-${formatIdDate(date)}`;
+  const seq = Number(result.rows[0].last_seq);
+  return `${prefix}${String(seq).padStart(4, "0")}-${formatIdDate(date)}`;
 }
 
-export function nextCustomerCode(db: Database, date?: Date): string {
+export function nextCustomerCode(db: SqlExecutor, date?: Date): Promise<string> {
   return nextCode(db, CUSTOMER_PREFIX, date);
 }
 
-export function nextMemberCode(db: Database, date?: Date): string {
+export function nextMemberCode(db: SqlExecutor, date?: Date): Promise<string> {
   return nextCode(db, MEMBER_PREFIX, date);
 }

@@ -54,10 +54,12 @@ export default async function ReportsPage({
     date,
   );
 
-  const summary = getReportSummary(range);
-  const buckets = getReportBuckets(range);
-  const performance = getMemberPerformance(range);
-  const customers = listCustomers({ from: range.from, to: range.to });
+  const [summary, buckets, performance, customers] = await Promise.all([
+    getReportSummary(range),
+    getReportBuckets(range),
+    getMemberPerformance(range),
+    listCustomers({ from: range.from, to: range.to }),
+  ]);
 
   const exportQuery = new URLSearchParams({ period, date: date ?? "" });
 

@@ -15,7 +15,7 @@ export default async function EditMemberPage({
 }) {
   await requirePermission("members.edit");
   const { code } = await params;
-  const member = getMemberByCode(decodeURIComponent(code));
+  const member = await getMemberByCode(decodeURIComponent(code));
   if (!member) notFound();
 
   return (

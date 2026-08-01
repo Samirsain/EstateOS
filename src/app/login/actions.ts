@@ -20,9 +20,12 @@ export async function loginAction(
     return { ok: false, message: "Enter both username and password." };
   }
 
-  const row = getDb()
-    .prepare<[string], UserRow>("SELECT * FROM users WHERE username = ?")
-    .get(username);
+  const db = await getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM users WHERE username = ?",
+    args: [username],
+  });
+  const row = result.rows[0] as unknown as UserRow | undefined;
 
   /*
    * A single generic message for unknown user, wrong password and disabled
@@ -35,7 +38,7 @@ export async function loginAction(
 
   if (!row || !row.is_active) return invalid;
   if (!verifyPassword(password, row.password_hash)) {
-    recordAudit({
+    await recordAudit({
       actor: null,
       action: "login.failed",
       entity: "user",
@@ -60,7 +63,7 @@ export async function loginAction(
     maxAge: sessionMaxAge,
   });
 
-  recordAudit({
+  await recordAudit({
     actor: user,
     action: "login.success",
     entity: "user",

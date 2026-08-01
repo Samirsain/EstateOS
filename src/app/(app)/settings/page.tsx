@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const actor = await requirePermission("settings.manage");
-  const users = listUsers();
+  const users = await listUsers();
 
   return (
     <>

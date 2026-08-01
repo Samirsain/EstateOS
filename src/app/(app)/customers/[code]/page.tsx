@@ -17,9 +17,7 @@ import {
 } from "@/components/ui";
 import { can, requirePermission } from "@/lib/auth";
 import { maskLast4 } from "@/lib/display";
-import { getDb } from "@/lib/db";
-import { getCustomerByCode } from "@/lib/queries";
-import type { TransferRow } from "@/lib/types";
+import { getCustomerByCode, listTransfersForCustomer } from "@/lib/queries";
 
 export async function generateMetadata({
   params,
@@ -28,14 +26,6 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { code } = await params;
   return { title: `Customer ${code}` };
-}
-
-interface TransferHistoryRow extends TransferRow {
-  from_code: string;
-  from_name: string;
-  to_code: string;
-  to_name: string;
-  actor_name: string;
 }
 
 export default async function CustomerDetailPage({
@@ -49,21 +39,10 @@ export default async function CustomerDetailPage({
   const { code } = await params;
   const { created } = await searchParams;
 
-  const customer = getCustomerByCode(decodeURIComponent(code));
+  const customer = await getCustomerByCode(decodeURIComponent(code));
   if (!customer) notFound();
 
-  const transfers = getDb()
-    .prepare<[number], TransferHistoryRow>(
-      `SELECT t.*, f.member_code AS from_code, f.name AS from_name,
-              g.member_code AS to_code, g.name AS to_name, u.name AS actor_name
-         FROM transfers t
-         JOIN members f ON f.id = t.from_member_id
-         JOIN members g ON g.id = t.to_member_id
-         JOIN users   u ON u.id = t.transferred_by
-        WHERE t.customer_id = ?
-        ORDER BY t.id DESC`,
-    )
-    .all(customer.id);
+  const transfers = await listTransfersForCustomer(customer.id);
 
   return (
     <>

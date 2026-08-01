@@ -24,7 +24,7 @@ export default async function MembersPage({
 }) {
   await requirePermission("members.view");
   const { q = "" } = await searchParams;
-  const members = listMembers(q);
+  const members = await listMembers(q);
 
   return (
     <>

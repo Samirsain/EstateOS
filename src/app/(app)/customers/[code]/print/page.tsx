@@ -24,7 +24,7 @@ export default async function CustomerPrintPage({
 }) {
   await requirePermission("customers.view");
   const { code } = await params;
-  const customer = getCustomerByCode(decodeURIComponent(code));
+  const customer = await getCustomerByCode(decodeURIComponent(code));
   if (!customer) notFound();
 
   return (

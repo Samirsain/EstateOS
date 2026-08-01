@@ -13,7 +13,7 @@ export default async function NewCustomerPage({
 }) {
   await requirePermission("customers.create");
   const { member } = await searchParams;
-  const members = listActiveMembersForSelect();
+  const members = await listActiveMembersForSelect();
 
   return (
     <>

@@ -24,7 +24,7 @@ export default async function MemberPrintPage({
 }) {
   await requirePermission("members.view");
   const { code } = await params;
-  const member = getMemberByCode(decodeURIComponent(code));
+  const member = await getMemberByCode(decodeURIComponent(code));
   if (!member) notFound();
 
   const dealsIn: string[] = JSON.parse(member.deals_in || "[]");

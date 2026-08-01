@@ -29,9 +29,11 @@ export default async function TransfersPage({
   await requirePermission("customers.transfer");
   const { customer } = await searchParams;
 
-  const customers = listCustomers();
-  const members = listActiveMembersForSelect();
-  const transfers = listTransfers();
+  const [customers, members, transfers] = await Promise.all([
+    listCustomers(),
+    listActiveMembersForSelect(),
+    listTransfers(),
+  ]);
 
   return (
     <>

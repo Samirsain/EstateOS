@@ -42,10 +42,10 @@ export default async function MemberDetailPage({
   const { code } = await params;
   const { created } = await searchParams;
 
-  const member = getMemberByCode(decodeURIComponent(code));
+  const member = await getMemberByCode(decodeURIComponent(code));
   if (!member) notFound();
 
-  const customers = listCustomers({ memberId: member.id });
+  const customers = await listCustomers({ memberId: member.id });
   const dealsIn: string[] = JSON.parse(member.deals_in || "[]");
 
   return (

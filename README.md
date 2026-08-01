@@ -5,7 +5,9 @@ onboarding, duplicate prevention and referral ownership, built against the
 Customer & Member Management PRD v2.0.
 
 Built on **Next.js 16** (App Router, Server Actions, Turbopack) with
-**React 19**, TypeScript, Tailwind CSS v4 and SQLite (`better-sqlite3`).
+**React 19**, TypeScript, Tailwind CSS v4 and SQLite via
+**[libSQL](https://turso.tech/libsql)** (`@libsql/client`) — a local file in
+development, [Turso](https://turso.tech) in production.
 
 > This project targets a pre-release Next.js. Check
 > `node_modules/next/dist/docs/` before assuming an API from older Next.js
@@ -61,12 +63,46 @@ npm run seed
 This creates a PC account (`pc` / `Office@123`), six members and ~25
 customers so the dashboard, charts and reports have something to show.
 
+## Deploying to Vercel (or any serverless host)
+
+Vercel's filesystem is **read-only** in production, so the local SQLite file
+under `data/` cannot be created there. The app already handles this — when
+`TURSO_DATABASE_URL` is set it talks to a remote [Turso](https://turso.tech)
+database over HTTP instead of opening a local file; without it, it falls back
+to `data/cmms.db`, which only works on a host with a writable, persistent
+disk (a normal VM, Railway, Render, Fly.io, etc.).
+
+To deploy on Vercel:
+
+1. **Create a free Turso database** — [turso.tech](https://turso.tech), sign
+   up, then either use the web dashboard or the CLI:
+   ```bash
+   turso db create cmms
+   turso db show cmms --url          # -> TURSO_DATABASE_URL
+   turso db tokens create cmms       # -> TURSO_AUTH_TOKEN
+   ```
+2. **Add environment variables** in the Vercel project (Settings → Environment
+   Variables):
+   - `TURSO_DATABASE_URL` — the `libsql://...` URL from step 1
+   - `TURSO_AUTH_TOKEN` — the token from step 1
+   - `APP_SECRET` — `openssl rand -hex 32` (required in production; the app
+     throws on first request without it)
+   - optionally `CMMS_MD_USERNAME` / `CMMS_MD_PASSWORD` to set the initial MD
+     login instead of the `md` / `ChangeMe@123` default
+3. **Redeploy.** The schema and the initial MD account are created
+   automatically on first request — no separate migration step.
+
+Local development is unaffected: without `TURSO_DATABASE_URL` set, `npm run
+dev` and `npm run seed` keep using `data/cmms.db` as before.
+
 ## Environment variables
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `APP_SECRET` | Key material for session signing, field encryption and the Aadhaar/mobile blind index. **Required in production** — generate with `openssl rand -hex 32`. | dev-only fallback |
-| `CMMS_DB_PATH` | SQLite file location. | `./data/cmms.db` |
+| `TURSO_DATABASE_URL` | Remote libSQL/Turso database URL. When unset, falls back to a local SQLite file — **must be set on Vercel or any host with a read-only filesystem**. | unset (local file) |
+| `TURSO_AUTH_TOKEN` | Auth token for the Turso database above. | unset |
+| `CMMS_DB_PATH` | Local SQLite file location, used only when `TURSO_DATABASE_URL` is unset. | `./data/cmms.db` |
 | `CMMS_MD_USERNAME` / `CMMS_MD_PASSWORD` | Initial MD account, used only when the `users` table is empty. | `md` / `ChangeMe@123` |
 
 ## Scripts
@@ -106,7 +142,7 @@ src/
       settings/             MD-only user management
     api/export/             CSV export route
   components/               Shared UI, charts, nav, print sheet
-  lib/                       db, auth, session, crypto, ids, queries, reports
+  lib/                       db (libSQL/Turso), auth, session, crypto, ids, queries, reports
   proxy.ts                   Route protection (Next 16's middleware)
 scripts/seed.ts               Demo data seed
 ```
