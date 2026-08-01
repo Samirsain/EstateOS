@@ -1,0 +1,308 @@
+import { getDb } from "./db";
+import type {
+  AuditLogRow,
+  CustomerRow,
+  CustomerWithMember,
+  DuplicateAttemptRow,
+  MemberRow,
+  UserRow,
+} from "./types";
+
+export interface MemberListItem extends MemberRow {
+  customer_count: number;
+}
+
+export function listMembers(search = ""): MemberListItem[] {
+  const trimmed = search.trim();
+
+  return getDb()
+    .prepare(
+      `SELECT m.*, COUNT(c.id) AS customer_count
+         FROM members m
+         LEFT JOIN customers c ON c.member_id = m.id
+        WHERE (@search = '' OR m.name LIKE @term OR m.mobile LIKE @term
+               OR m.member_code LIKE @term OR m.invite_code LIKE @term
+               OR IFNULL(m.dealer_name, '') LIKE @term
+               OR IFNULL(m.company_name, '') LIKE @term
+               OR IFNULL(m.city, '') LIKE @term)
+        GROUP BY m.id
+        ORDER BY m.id DESC`,
+    )
+    .all({ search: trimmed, term: `%${trimmed}%` }) as MemberListItem[];
+}
+
+export function getMemberByCode(code: string): MemberListItem | undefined {
+  return getDb()
+    .prepare<[string], MemberListItem>(
+      `SELECT m.*, COUNT(c.id) AS customer_count
+         FROM members m
+         LEFT JOIN customers c ON c.member_id = m.id
+        WHERE m.member_code = ?
+        GROUP BY m.id`,
+    )
+    .get(code);
+}
+
+export function getMemberById(id: number): MemberRow | undefined {
+  return getDb()
+    .prepare<[number], MemberRow>("SELECT * FROM members WHERE id = ?")
+    .get(id);
+}
+
+/** Active members, for the "assign to member" dropdown on customer forms. */
+export function listActiveMembersForSelect(): Pick<
+  MemberRow,
+  "id" | "member_code" | "name" | "invite_code" | "mobile"
+>[] {
+  return getDb()
+    .prepare(
+      `SELECT id, member_code, name, invite_code, mobile
+         FROM members WHERE is_active = 1 ORDER BY name COLLATE NOCASE`,
+    )
+    .all() as Pick<
+    MemberRow,
+    "id" | "member_code" | "name" | "invite_code" | "mobile"
+  >[];
+}
+
+export interface CustomerFilters {
+  search?: string;
+  type?: string;
+  memberId?: number;
+  from?: string;
+  to?: string;
+}
+
+export function listCustomers(filters: CustomerFilters = {}): CustomerWithMember[] {
+  const search = (filters.search ?? "").trim();
+  const term = `%${search}%`;
+  const conditions: string[] = [];
+  const params: Record<string, string | number> = {};
+
+  if (search) {
+    conditions.push(
+      `(c.name LIKE @term OR c.mobile LIKE @term OR c.customer_code LIKE @term
+        OR c.invite_code LIKE @term OR c.aadhaar_last4 = @exact
+        OR m.name LIKE @term OR m.member_code LIKE @term)`,
+    );
+    params.term = term;
+    params.exact = search.replace(/\D/g, "").slice(-4);
+  }
+  if (filters.type) {
+    conditions.push("c.customer_type = @type");
+    params.type = filters.type;
+  }
+  if (filters.memberId) {
+    conditions.push("c.member_id = @memberId");
+    params.memberId = filters.memberId;
+  }
+  if (filters.from) {
+    conditions.push("date(c.created_at) >= date(@from)");
+    params.from = filters.from;
+  }
+  if (filters.to) {
+    conditions.push("date(c.created_at) <= date(@to)");
+    params.to = filters.to;
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  return getDb()
+    .prepare(
+      `SELECT c.*, m.name AS member_name, m.member_code AS member_code
+         FROM customers c
+         JOIN members m ON m.id = c.member_id
+         ${where}
+        ORDER BY c.id DESC`,
+    )
+    .all(params) as CustomerWithMember[];
+}
+
+export function getCustomerByCode(code: string): CustomerWithMember | undefined {
+  return getDb()
+    .prepare<[string], CustomerWithMember>(
+      `SELECT c.*, m.name AS member_name, m.member_code AS member_code
+         FROM customers c
+         JOIN members m ON m.id = c.member_id
+        WHERE c.customer_code = ?`,
+    )
+    .get(code);
+}
+
+export function getCustomerById(id: number): CustomerRow | undefined {
+  return getDb()
+    .prepare<[number], CustomerRow>("SELECT * FROM customers WHERE id = ?")
+    .get(id);
+}
+
+export interface DashboardStats {
+  totalCustomers: number;
+  totalMembers: number;
+  investors: number;
+  users: number;
+  todayCustomers: number;
+  todayMembers: number;
+  duplicateAttempts: number;
+  duplicateAttemptsToday: number;
+  transfers: number;
+}
+
+export function getDashboardStats(): DashboardStats {
+  const db = getDb();
+  const one = (sql: string): number =>
+    (db.prepare(sql).get() as { value: number }).value;
+
+  return {
+    totalCustomers: one("SELECT COUNT(*) AS value FROM customers"),
+    totalMembers: one("SELECT COUNT(*) AS value FROM members"),
+    investors: one(
+      "SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'Investor'",
+    ),
+    users: one(
+      "SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'User'",
+    ),
+    todayCustomers: one(
+      "SELECT COUNT(*) AS value FROM customers WHERE date(created_at) = date('now')",
+    ),
+    todayMembers: one(
+      "SELECT COUNT(*) AS value FROM members WHERE date(created_at) = date('now')",
+    ),
+    duplicateAttempts: one("SELECT COUNT(*) AS value FROM duplicate_attempts"),
+    duplicateAttemptsToday: one(
+      "SELECT COUNT(*) AS value FROM duplicate_attempts WHERE date(created_at) = date('now')",
+    ),
+    transfers: one("SELECT COUNT(*) AS value FROM transfers"),
+  };
+}
+
+export interface GrowthPoint {
+  day: string;
+  customers: number;
+  members: number;
+}
+
+/**
+ * Registrations per day for the last `days` days. The day spine is generated in
+ * SQL so days with no registrations still appear as zero rather than being
+ * dropped from the series.
+ */
+export function getGrowthSeries(days = 30): GrowthPoint[] {
+  return getDb()
+    .prepare(
+      `WITH RECURSIVE spine(day, n) AS (
+         SELECT date('now', '-' || (@days - 1) || ' day'), 1
+         UNION ALL
+         SELECT date(day, '+1 day'), n + 1 FROM spine WHERE n < @days
+       )
+       SELECT spine.day AS day,
+              (SELECT COUNT(*) FROM customers WHERE date(created_at) = spine.day) AS customers,
+              (SELECT COUNT(*) FROM members   WHERE date(created_at) = spine.day) AS members
+         FROM spine
+        ORDER BY spine.day`,
+    )
+    .all({ days }) as GrowthPoint[];
+}
+
+export interface TopMember {
+  member_code: string;
+  name: string;
+  city: string | null;
+  customers: number;
+  investors: number;
+}
+
+export function getTopMembers(limit = 8): TopMember[] {
+  return getDb()
+    .prepare<[number], TopMember>(
+      `SELECT m.member_code, m.name, m.city,
+              COUNT(c.id) AS customers,
+              SUM(CASE WHEN c.customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
+         FROM members m
+         LEFT JOIN customers c ON c.member_id = m.id
+        GROUP BY m.id
+       HAVING customers > 0
+        ORDER BY customers DESC, m.name COLLATE NOCASE
+        LIMIT ?`,
+    )
+    .all(limit);
+}
+
+export function listDuplicateAttempts(limit = 100): (DuplicateAttemptRow & {
+  attempted_by_name: string | null;
+})[] {
+  return getDb()
+    .prepare<[number], DuplicateAttemptRow & { attempted_by_name: string | null }>(
+      `SELECT d.*, u.name AS attempted_by_name
+         FROM duplicate_attempts d
+         LEFT JOIN users u ON u.id = d.attempted_by
+        ORDER BY d.id DESC LIMIT ?`,
+    )
+    .all(limit);
+}
+
+export interface AuditFilters {
+  action?: string;
+  entity?: string;
+  limit?: number;
+}
+
+export function listAuditLogs(filters: AuditFilters = {}): AuditLogRow[] {
+  const conditions: string[] = [];
+  const params: Record<string, string | number> = {
+    limit: filters.limit ?? 200,
+  };
+
+  if (filters.action) {
+    conditions.push("action LIKE @action");
+    params.action = `${filters.action}%`;
+  }
+  if (filters.entity) {
+    conditions.push("entity = @entity");
+    params.entity = filters.entity;
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  return getDb()
+    .prepare(
+      `SELECT * FROM audit_logs ${where} ORDER BY id DESC LIMIT @limit`,
+    )
+    .all(params) as AuditLogRow[];
+}
+
+export interface TransferListItem {
+  id: number;
+  customer_code: string;
+  customer_name: string;
+  from_code: string;
+  from_name: string;
+  to_code: string;
+  to_name: string;
+  reason: string | null;
+  transferred_by_name: string;
+  created_at: string;
+}
+
+export function listTransfers(limit = 100): TransferListItem[] {
+  return getDb()
+    .prepare<[number], TransferListItem>(
+      `SELECT t.id, t.reason, t.created_at,
+              c.customer_code, c.name AS customer_name,
+              f.member_code AS from_code, f.name AS from_name,
+              g.member_code AS to_code,   g.name AS to_name,
+              u.name AS transferred_by_name
+         FROM transfers t
+         JOIN customers c ON c.id = t.customer_id
+         JOIN members   f ON f.id = t.from_member_id
+         JOIN members   g ON g.id = t.to_member_id
+         JOIN users     u ON u.id = t.transferred_by
+        ORDER BY t.id DESC LIMIT ?`,
+    )
+    .all(limit);
+}
+
+export function listUsers(): UserRow[] {
+  return getDb()
+    .prepare("SELECT * FROM users ORDER BY role, username COLLATE NOCASE")
+    .all() as UserRow[];
+}
