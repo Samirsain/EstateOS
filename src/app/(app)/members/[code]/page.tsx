@@ -17,10 +17,11 @@ import {
   formatDate,
   formatDateTime,
 } from "@/components/ui";
+import { ConfirmButton } from "@/components/confirm-button";
 import { can, requirePermission } from "@/lib/auth";
 import { maskLast4 } from "@/lib/display";
 import { getMemberByCode, listCustomers } from "@/lib/queries";
-import { setMemberActiveAction } from "../actions";
+import { deleteMemberAction, setMemberActiveAction } from "../actions";
 
 export async function generateMetadata({
   params,
@@ -212,9 +213,9 @@ export default async function MemberDetailPage({
             <Card>
               <CardHeader
                 title="Managing Director controls"
-                description="Members are deactivated, never deleted, so referral history stays intact."
+                description="Deleting removes the member permanently. This cannot be undone."
               />
-              <div className="p-5">
+              <div className="space-y-3 p-5">
                 <form action={setMemberActiveAction}>
                   <input
                     type="hidden"
@@ -229,12 +230,37 @@ export default async function MemberDetailPage({
                   <Button
                     type="submit"
                     variant={member.is_active ? "danger" : "secondary"}
+                    className="w-full"
                   >
                     {member.is_active
                       ? "Deactivate member"
                       : "Reactivate member"}
                   </Button>
                 </form>
+
+                {member.customer_count === 0 ? (
+                  <form action={deleteMemberAction}>
+                    <input
+                      type="hidden"
+                      name="memberCode"
+                      value={member.member_code}
+                    />
+                    <ConfirmButton
+                      variant="danger"
+                      className="w-full"
+                      confirmMessage={`Permanently delete ${member.name} (${member.member_code})? This cannot be undone.`}
+                    >
+                      Delete member
+                    </ConfirmButton>
+                  </form>
+                ) : (
+                  <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
+                    Can&apos;t delete — {member.customer_count} customer
+                    {member.customer_count === 1 ? " is" : "s are"} still
+                    assigned to this member. Deactivate instead, or delete
+                    those customers first.
+                  </p>
+                )}
               </div>
             </Card>
           ) : null}

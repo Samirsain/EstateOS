@@ -11,9 +11,11 @@ import {
   PageHeader,
   formatDateTime,
 } from "@/components/ui";
-import { requirePermission } from "@/lib/auth";
+import { ConfirmButton } from "@/components/confirm-button";
+import { can, requirePermission } from "@/lib/auth";
 import { maskLast4 } from "@/lib/display";
 import { getCustomerByCode } from "@/lib/queries";
+import { deleteCustomerAction } from "../actions";
 
 export async function generateMetadata({
   params,
@@ -31,7 +33,7 @@ export default async function CustomerDetailPage({
   params: Promise<{ code: string }>;
   searchParams: Promise<{ created?: string }>;
 }) {
-  await requirePermission("customers.view");
+  const user = await requirePermission("customers.view");
   const { code } = await params;
   const { created } = await searchParams;
 
@@ -137,6 +139,31 @@ export default async function CustomerDetailPage({
             </div>
           </div>
         </Card>
+
+        {can(user.role, "customers.delete") ? (
+          <Card className="h-fit lg:col-start-3">
+            <CardHeader
+              title="Managing Director controls"
+              description="Deleting removes the customer permanently. This cannot be undone."
+            />
+            <div className="p-5">
+              <form action={deleteCustomerAction}>
+                <input
+                  type="hidden"
+                  name="customerCode"
+                  value={customer.customer_code}
+                />
+                <ConfirmButton
+                  variant="danger"
+                  className="w-full"
+                  confirmMessage={`Permanently delete ${customer.name} (${customer.customer_code})? This cannot be undone.`}
+                >
+                  Delete customer
+                </ConfirmButton>
+              </form>
+            </div>
+          </Card>
+        ) : null}
       </div>
     </>
   );

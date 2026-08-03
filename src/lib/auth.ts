@@ -15,6 +15,7 @@ export const PERMISSIONS = {
   "members.edit": ["MD", "PC"],
   "members.delete": ["MD"],
   "customers.view": ["MD", "PC"],
+  "customers.delete": ["MD"],
   "settings.manage": ["MD"],
 } as const satisfies Record<string, readonly Role[]>;
 

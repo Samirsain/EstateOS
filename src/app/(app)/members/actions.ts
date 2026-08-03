@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { assertPermission } from "@/lib/auth";
 import { recordAudit, recordDuplicateAttempt } from "@/lib/audit";
 import { blindIndex, encryptField, maskAadhaar } from "@/lib/crypto";
@@ -306,4 +307,48 @@ export async function setMemberActiveAction(formData: FormData): Promise<void> {
 
   revalidatePath("/members");
   revalidatePath(`/members/${code}`);
+}
+
+/**
+ * Permanently removes a member. Only allowed when the member has no
+ * customers referred to them — deleting a member with customers on the
+ * books would orphan those customer records (their member_id would point
+ * nowhere). The member detail page already hides this action in that case;
+ * this check is the server-side backstop against a direct form POST.
+ */
+export async function deleteMemberAction(formData: FormData): Promise<void> {
+  const actor = await assertPermission("members.delete");
+  const code = requireText(formData.get("memberCode"), { max: 40 });
+  const db = await getDb();
+
+  const memberResult = await db.execute({
+    sql: "SELECT id, name FROM members WHERE member_code = ?",
+    args: [code],
+  });
+  const member = memberResult.rows[0] as unknown as
+    | { id: number; name: string }
+    | undefined;
+  if (!member) return;
+
+  const countResult = await db.execute({
+    sql: "SELECT COUNT(*) AS count FROM customers WHERE member_id = ?",
+    args: [member.id],
+  });
+  if (Number(countResult.rows[0]?.count ?? 0) > 0) return;
+
+  await db.execute({
+    sql: "DELETE FROM members WHERE id = ?",
+    args: [member.id],
+  });
+
+  await recordAudit({
+    actor,
+    action: "member.deleted",
+    entity: "member",
+    entityRef: code,
+    details: { name: member.name },
+  });
+
+  revalidatePath("/members");
+  redirect("/members");
 }
