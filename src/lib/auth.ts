@@ -5,9 +5,8 @@ import { sessionCookieName, verifySession } from "./session";
 import type { Role, SessionUser } from "./types";
 
 /**
- * Capability model from PRD §1. The MD has full access; the PC runs the office
- * but cannot transfer ownership, delete records, manage users or read the audit
- * log.
+ * Capability model. The MD has full access; the PC runs the office but
+ * cannot manage user accounts.
  */
 export const PERMISSIONS = {
   "dashboard.view": ["MD", "PC"],
@@ -16,12 +15,6 @@ export const PERMISSIONS = {
   "members.edit": ["MD", "PC"],
   "members.delete": ["MD"],
   "customers.view": ["MD", "PC"],
-  "customers.create": ["MD", "PC"],
-  "customers.delete": ["MD"],
-  "customers.transfer": ["MD"],
-  "reports.view": ["MD", "PC"],
-  "reports.export": ["MD", "PC"],
-  "audit.view": ["MD"],
   "settings.manage": ["MD"],
 } as const satisfies Record<string, readonly Role[]>;
 

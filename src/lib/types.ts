@@ -30,7 +30,6 @@ export interface MemberRow {
   id: number;
   member_code: string;
   name: string;
-  dealer_name: string | null;
   mobile: string;
   alternate_mobile: string | null;
   city: string | null;
@@ -64,39 +63,6 @@ export interface CustomerRow {
 export interface CustomerWithMember extends CustomerRow {
   member_name: string;
   member_code: string;
-}
-
-export interface TransferRow {
-  id: number;
-  customer_id: number;
-  from_member_id: number;
-  to_member_id: number;
-  reason: string | null;
-  transferred_by: number;
-  created_at: string;
-}
-
-export interface DuplicateAttemptRow {
-  id: number;
-  field: "mobile" | "aadhaar";
-  entity: "customer" | "member";
-  masked_value: string;
-  existing_code: string | null;
-  attempted_name: string | null;
-  attempted_by: number | null;
-  created_at: string;
-}
-
-export interface AuditLogRow {
-  id: number;
-  actor_id: number | null;
-  actor_name: string;
-  actor_role: string;
-  action: string;
-  entity: string;
-  entity_ref: string | null;
-  details: string | null;
-  created_at: string;
 }
 
 export interface SessionUser {

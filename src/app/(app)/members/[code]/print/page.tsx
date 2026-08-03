@@ -40,25 +40,14 @@ export default async function MemberPrintPage({
         </p>
       </header>
 
-      <div className="mb-6 flex justify-between gap-6 text-sm">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-ink-muted">
-            Member ID
-          </p>
-          <p className="tabular text-lg font-bold">{member.member_code}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs uppercase tracking-wide text-ink-muted">
-            Invite code
-          </p>
-          <p className="text-lg font-bold tracking-[0.15em]">
-            {member.invite_code}
-          </p>
-        </div>
+      <div className="mb-6 text-sm">
+        <p className="text-xs uppercase tracking-wide text-ink-muted">
+          Member ID / Referral code
+        </p>
+        <p className="tabular text-lg font-bold">{member.member_code}</p>
       </div>
 
       <Row label="Name" value={member.name} />
-      <Row label="Dealer name" value={member.dealer_name ?? ""} />
       <Row label="Mobile number" value={member.mobile} />
       <Row label="Alternate mobile" value={member.alternate_mobile ?? ""} />
       <Row label="City" value={member.city ?? ""} />

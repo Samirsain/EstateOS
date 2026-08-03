@@ -1,8 +1,7 @@
 # Customer & Member Management System (CMMS)
 
 A centralised office management system for member registration, customer
-onboarding, duplicate prevention and referral ownership, built against the
-Customer & Member Management PRD v2.0.
+tracking and referral ownership.
 
 Built on **Next.js 16** (App Router, Server Actions, Turbopack) with
 **React 19**, TypeScript, Tailwind CSS v4 and SQLite via
@@ -16,13 +15,12 @@ development, [Turso](https://turso.tech) in production.
 
 ## Roles
 
-- **MD (Managing Director)** — full access: dashboard, reports, members,
-  customers, transfers, settings, audit logs, exports.
-- **PC (Process Coordinator)** — registers members and customers, assigns
-  customers to members, searches records, prints forms, views reports.
-  Cannot transfer ownership, delete records, or manage users.
-- **Member** — an offline referral partner. Has no login; refers customers
-  by quoting their invite code to the PC.
+- **MD (Managing Director)** — full access: dashboard, members, customers,
+  settings.
+- **PC (Process Coordinator)** — registers and edits members, views
+  customers, searches records, prints forms. Cannot manage user accounts.
+- **Member** — an offline referral partner. Has no login. A member's
+  referral code is simply their Member ID.
 
 Permissions are enforced in three places: `src/proxy.ts` (route-level
 redirect), `requirePermission`/`assertPermission` in `src/lib/auth.ts` (page
@@ -31,15 +29,12 @@ and server-action guards), and UNIQUE constraints in the SQLite schema
 
 ## Business rules enforced
 
-- One mobile number = one customer (`UNIQUE` + pre-insert check).
-- One Aadhaar number = one customer (`UNIQUE` on a keyed blind index + check).
-- One customer = one member, permanently, until transferred.
-- Only the MD can transfer customer ownership (audited).
-- Every create, duplicate-block, login, transfer, and export is written to
-  the audit log.
-- Customer IDs: `TM0001-DDMMYYYY`. Member IDs: `3C0001-DDMMYYYY`. Both are
-  sequential, monotonic and never reused, generated inside the same
-  transaction as the insert that consumes them.
+- One mobile number = one customer (`UNIQUE` on the column).
+- One Aadhaar number = one customer (`UNIQUE` on a keyed blind index).
+- One customer = one member, permanently.
+- A member's referral code is their Member ID — no separate invite code.
+- Member IDs: `3C0001-DDMMYYYY`, sequential, monotonic and never reused,
+  generated inside the same transaction as the insert that consumes them.
 
 ## Getting started
 
@@ -61,7 +56,7 @@ npm run seed
 ```
 
 This creates a PC account (`pc` / `Office@123`), six members and ~25
-customers so the dashboard, charts and reports have something to show.
+customers so the dashboard has something to show.
 
 ## Deploying to Vercel (or any serverless host)
 
@@ -124,8 +119,6 @@ dev` and `npm run seed` keep using `data/cmms.db` as before.
 - Passwords are hashed with scrypt.
 - Sessions are signed JWTs (HS256) in an `httpOnly`, `sameSite=lax` cookie,
   8-hour expiry.
-- CSV exports escape spreadsheet-formula injection and are gated by the same
-  permission checks as the pages.
 
 ## Project structure
 
@@ -135,14 +128,11 @@ src/
     login/                  Sign-in
     (app)/                  Authenticated shell (nav, header)
       dashboard/            Cards + charts
-      members/  customers/  CRUD, search, print forms
-      transfers/            MD-only ownership transfer
-      reports/              Daily/weekly/monthly/yearly + CSV export
-      audit/                MD-only audit log + duplicate attempts
-      settings/             MD-only user management
-    api/export/             CSV export route
+      members/               CRUD, search, print forms
+      customers/             View, search, print forms (view-only)
+      settings/              MD-only user management
   components/               Shared UI, charts, nav, print sheet
-  lib/                       db (libSQL/Turso), auth, session, crypto, ids, queries, reports
+  lib/                       db (libSQL/Turso), auth, session, crypto, ids, queries
   proxy.ts                   Route protection (Next 16's middleware)
 scripts/seed.ts               Demo data seed
 ```

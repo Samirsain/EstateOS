@@ -4,7 +4,6 @@ import {
   Badge,
   Card,
   EmptyState,
-  LinkButton,
   PageHeader,
   Table,
   Td,
@@ -32,11 +31,6 @@ export default async function CustomersPage({
       <PageHeader
         title="Customers"
         description="Every customer is permanently owned by the member who referred them."
-        action={
-          <LinkButton href="/customers/new" variant="primary">
-            Register customer
-          </LinkButton>
-        }
       />
 
       <Card>
@@ -69,14 +63,7 @@ export default async function CustomersPage({
             description={
               q || type
                 ? "Try a different search term or clear the type filter."
-                : "Register a customer against the member who referred them."
-            }
-            action={
-              q || type ? null : (
-                <LinkButton href="/customers/new" variant="primary">
-                  Register customer
-                </LinkButton>
-              )
+                : "Customers appear here once they are on record."
             }
           />
         ) : (

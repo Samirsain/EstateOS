@@ -3,14 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { assertPermission } from "@/lib/auth";
 import { recordAudit, recordDuplicateAttempt } from "@/lib/audit";
-import {
-  blindIndex,
-  encryptField,
-  generateInviteCode,
-  maskAadhaar,
-} from "@/lib/crypto";
+import { blindIndex, encryptField, maskAadhaar } from "@/lib/crypto";
 import { getDb } from "@/lib/db";
-import type { SqlExecutor } from "@/lib/db";
 import { nextMemberCode } from "@/lib/ids";
 import type { ActionState, MemberRow } from "@/lib/types";
 import { DEALS_IN_OPTIONS } from "@/lib/types";
@@ -25,7 +19,6 @@ import {
 
 interface MemberInput {
   name: string;
-  dealerName: string;
   mobile: string;
   alternateMobile: string;
   city: string;
@@ -38,7 +31,6 @@ interface MemberInput {
 function readMemberForm(formData: FormData): MemberInput {
   return {
     name: requireText(formData.get("name")),
-    dealerName: requireText(formData.get("dealerName")),
     mobile: normaliseMobile(requireText(formData.get("mobile"), { max: 20 })),
     alternateMobile: normaliseMobile(
       requireText(formData.get("alternateMobile"), { max: 20 }),
@@ -71,19 +63,6 @@ function validateMember(input: MemberInput): Record<string, string> {
     errors.dealsIn = "Select at least one category.";
 
   return errors;
-}
-
-/** Draws invite codes until an unused one is found. */
-async function allocateInviteCode(db: SqlExecutor): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const code = generateInviteCode();
-    const result = await db.execute({
-      sql: "SELECT id FROM members WHERE invite_code = ?",
-      args: [code],
-    });
-    if (result.rows.length === 0) return code;
-  }
-  throw new Error("Could not allocate a unique invite code");
 }
 
 export async function createMemberAction(
@@ -163,23 +142,24 @@ export async function createMemberAction(
    * The ID reservation and the INSERT share one transaction: if the insert
    * trips a UNIQUE constraint (a concurrent registration between the checks
    * above and here) the sequence number rolls back with it and is not burned.
+   *
+   * The referral code a member shares is simply their Member ID — there is
+   * no separate invite code to generate or allocate.
    */
   const tx = await db.transaction("write");
   let created: { code: string; invite: string };
   try {
     const code = await nextMemberCode(tx);
-    const invite = await allocateInviteCode(tx);
 
     await tx.execute({
       sql: `INSERT INTO members (
-              member_code, name, dealer_name, mobile, alternate_mobile, city,
+              member_code, name, mobile, alternate_mobile, city,
               company_name, deals_in, experience, aadhaar_encrypted, aadhaar_index,
               aadhaar_last4, invite_code, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         code,
         input.name,
-        input.dealerName || null,
         input.mobile,
         input.alternateMobile || null,
         input.city || null,
@@ -189,13 +169,13 @@ export async function createMemberAction(
         encryptField(input.aadhaar),
         aadhaarIndex,
         input.aadhaar.slice(-4),
-        invite,
+        code,
         actor.id,
       ],
     });
 
     await tx.commit();
-    created = { code, invite };
+    created = { code, invite: code };
   } catch (error) {
     await tx.rollback().catch(() => {});
     const message = error instanceof Error ? error.message : String(error);
@@ -224,7 +204,7 @@ export async function createMemberAction(
 
   return {
     ok: true,
-    message: `Member ${created.code} registered. Invite code: ${created.invite}`,
+    message: `Member ${created.code} registered.`,
     createdCode: created.code,
   };
 }
@@ -269,13 +249,12 @@ export async function updateMemberAction(
 
   await db.execute({
     sql: `UPDATE members SET
-            name = ?, dealer_name = ?, mobile = ?, alternate_mobile = ?, city = ?,
+            name = ?, mobile = ?, alternate_mobile = ?, city = ?,
             company_name = ?, deals_in = ?, experience = ?, aadhaar_encrypted = ?,
             aadhaar_index = ?, aadhaar_last4 = ?
           WHERE id = ?`,
     args: [
       input.name,
-      input.dealerName || null,
       input.mobile,
       input.alternateMobile || null,
       input.city || null,

@@ -19,7 +19,6 @@ import { createMemberAction, updateMemberAction } from "./actions";
 export interface MemberFormValues {
   memberCode?: string;
   name: string;
-  dealerName: string;
   mobile: string;
   alternateMobile: string;
   city: string;
@@ -31,7 +30,6 @@ export interface MemberFormValues {
 
 const EMPTY_VALUES: MemberFormValues = {
   name: "",
-  dealerName: "",
   mobile: "",
   alternateMobile: "",
   city: "",
@@ -96,15 +94,6 @@ export function MemberForm({
             defaultValue={values.name}
             autoComplete="off"
             required
-          />
-        </Field>
-
-        <Field label="Dealer name" name="dealerName">
-          <Input
-            id="dealerName"
-            name="dealerName"
-            defaultValue={values.dealerName}
-            autoComplete="off"
           />
         </Field>
 

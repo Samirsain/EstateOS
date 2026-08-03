@@ -7,9 +7,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/members", label: "Members" },
   { href: "/customers", label: "Customers" },
-  { href: "/reports", label: "Reports" },
-  { href: "/transfers", label: "Transfers", mdOnly: true },
-  { href: "/audit", label: "Audit Log", mdOnly: true },
   { href: "/settings", label: "Settings", mdOnly: true },
 ];
 

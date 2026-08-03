@@ -61,12 +61,6 @@ export default async function MemberDetailPage({
             <LinkButton href={`/members/${member.member_code}/edit`}>
               Edit
             </LinkButton>
-            <LinkButton
-              href={`/customers/new?member=${member.member_code}`}
-              variant="primary"
-            >
-              Register customer
-            </LinkButton>
           </>
         }
       />
@@ -74,9 +68,8 @@ export default async function MemberDetailPage({
       {created ? (
         <div className="mb-5">
           <Alert tone="positive" title="Member registered successfully.">
-            Share invite code <strong>{member.invite_code}</strong> with{" "}
-            {member.name}. Customers referred with this code are permanently
-            assigned to this member.
+            The Member ID <strong>{member.member_code}</strong> is also{" "}
+            {member.name}&apos;s referral code — share it with them directly.
           </Alert>
         </div>
       ) : null}
@@ -99,7 +92,6 @@ export default async function MemberDetailPage({
                 items={[
                   { label: "Member ID", value: <span className="tabular">{member.member_code}</span> },
                   { label: "Name", value: member.name },
-                  { label: "Dealer name", value: member.dealer_name ?? "—" },
                   { label: "Mobile", value: <span className="tabular">{member.mobile}</span> },
                   {
                     label: "Alternate mobile",
@@ -204,14 +196,14 @@ export default async function MemberDetailPage({
 
         <div className="space-y-5">
           <Card>
-            <CardHeader title="Referral invite code" />
+            <CardHeader title="Referral code" />
             <div className="p-5 text-center">
-              <p className="rounded-lg bg-brand-50 py-4 text-2xl font-bold tracking-[0.2em] text-brand-700">
+              <p className="tabular rounded-lg bg-brand-50 py-4 text-2xl font-bold text-brand-700">
                 {member.invite_code}
               </p>
               <p className="mt-3 text-xs text-ink-muted">
-                The member quotes this code when referring a customer. It never
-                changes.
+                This is the member&apos;s Member ID — quote it when referring a
+                customer.
               </p>
             </div>
           </Card>

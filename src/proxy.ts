@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sessionCookieName, verifySession } from "@/lib/session";
 
-/** Routes only the Managing Director may open (PRD §1). */
-const MD_ONLY_PREFIXES = ["/transfers", "/audit", "/settings"];
+/** Routes only the Managing Director may open. */
+const MD_ONLY_PREFIXES = ["/settings"];
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;

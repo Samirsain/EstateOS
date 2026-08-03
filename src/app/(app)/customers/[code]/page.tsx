@@ -7,17 +7,13 @@ import {
   Card,
   CardHeader,
   DescriptionList,
-  EmptyState,
   LinkButton,
   PageHeader,
-  Table,
-  Td,
-  Th,
   formatDateTime,
 } from "@/components/ui";
-import { can, requirePermission } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { maskLast4 } from "@/lib/display";
-import { getCustomerByCode, listTransfersForCustomer } from "@/lib/queries";
+import { getCustomerByCode } from "@/lib/queries";
 
 export async function generateMetadata({
   params,
@@ -35,14 +31,12 @@ export default async function CustomerDetailPage({
   params: Promise<{ code: string }>;
   searchParams: Promise<{ created?: string }>;
 }) {
-  const user = await requirePermission("customers.view");
+  await requirePermission("customers.view");
   const { code } = await params;
   const { created } = await searchParams;
 
   const customer = await getCustomerByCode(decodeURIComponent(code));
   if (!customer) notFound();
-
-  const transfers = await listTransfersForCustomer(customer.id);
 
   return (
     <>
@@ -50,19 +44,9 @@ export default async function CustomerDetailPage({
         title={customer.name}
         description={`Customer ID ${customer.customer_code}`}
         action={
-          <>
-            <LinkButton href={`/customers/${customer.customer_code}/print`}>
-              Print form
-            </LinkButton>
-            {can(user.role, "customers.transfer") ? (
-              <LinkButton
-                href={`/transfers?customer=${customer.customer_code}`}
-                variant="primary"
-              >
-                Transfer ownership
-              </LinkButton>
-            ) : null}
-          </>
+          <LinkButton href={`/customers/${customer.customer_code}/print`}>
+            Print form
+          </LinkButton>
         }
       />
 
@@ -124,54 +108,6 @@ export default async function CustomerDetailPage({
               />
             </div>
           </Card>
-
-          <Card>
-            <CardHeader
-              title="Ownership history"
-              description="Only the Managing Director can move a customer between members."
-            />
-            {transfers.length === 0 ? (
-              <EmptyState
-                title="No transfers"
-                description="This customer has stayed with the member who originally referred them."
-              />
-            ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>Date</Th>
-                    <Th>From</Th>
-                    <Th>To</Th>
-                    <Th>Reason</Th>
-                    <Th>By</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transfers.map((transfer) => (
-                    <tr key={transfer.id}>
-                      <Td className="whitespace-nowrap text-ink-muted">
-                        {formatDateTime(transfer.created_at)}
-                      </Td>
-                      <Td>
-                        {transfer.from_name}
-                        <p className="tabular text-xs text-ink-muted">
-                          {transfer.from_code}
-                        </p>
-                      </Td>
-                      <Td>
-                        {transfer.to_name}
-                        <p className="tabular text-xs text-ink-muted">
-                          {transfer.to_code}
-                        </p>
-                      </Td>
-                      <Td>{transfer.reason ?? "—"}</Td>
-                      <Td>{transfer.actor_name}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            )}
-          </Card>
         </div>
 
         <Card className="h-fit">
@@ -193,7 +129,7 @@ export default async function CustomerDetailPage({
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
-                Invite code used
+                Referral code used
               </p>
               <p className="mt-1 text-sm font-semibold tracking-[0.15em] text-ink">
                 {customer.invite_code}

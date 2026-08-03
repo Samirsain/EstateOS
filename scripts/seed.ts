@@ -7,7 +7,7 @@
  * Imports the application's own modules so generated IDs, invite codes and
  * field encryption are identical to what the app produces at runtime.
  */
-import { blindIndex, encryptField, generateInviteCode, hashPassword } from "../src/lib/crypto.ts";
+import { blindIndex, encryptField, hashPassword } from "../src/lib/crypto.ts";
 import { getDb } from "../src/lib/db.ts";
 import { nextCustomerCode, nextMemberCode } from "../src/lib/ids.ts";
 
@@ -49,12 +49,12 @@ function makeAadhaar(seed: number): string {
 }
 
 const MEMBERS = [
-  { name: "Rajesh Kumar", dealer: "Kumar Properties", city: "Jaipur", company: "Kumar Realty", deals: ["Residential", "Commercial"], exp: "5-10 years" },
-  { name: "Priya Sharma", dealer: "Sharma Estates", city: "Jaipur", company: "Sharma Estates LLP", deals: ["Residential", "Rental"], exp: "3-5 years" },
-  { name: "Amit Patel", dealer: "Patel Land Co", city: "Ahmedabad", company: "Patel Land Company", deals: ["Agriculture", "Commercial"], exp: "More than 10 years" },
-  { name: "Sunita Verma", dealer: "Verma Associates", city: "Udaipur", company: "Verma Associates", deals: ["Residential"], exp: "1-3 years" },
-  { name: "Mohammed Iqbal", dealer: "Iqbal Realtors", city: "Kota", company: "Iqbal Realtors", deals: ["Commercial", "Rental"], exp: "5-10 years" },
-  { name: "Deepak Joshi", dealer: "Joshi Brothers", city: "Ajmer", company: "Joshi Brothers Pvt Ltd", deals: ["Residential", "Agriculture", "Rental"], exp: "3-5 years" },
+  { name: "Rajesh Kumar", city: "Jaipur", company: "Kumar Realty", deals: ["Residential", "Commercial"], exp: "5-10 years" },
+  { name: "Priya Sharma", city: "Jaipur", company: "Sharma Estates LLP", deals: ["Residential", "Rental"], exp: "3-5 years" },
+  { name: "Amit Patel", city: "Ahmedabad", company: "Patel Land Company", deals: ["Agriculture", "Commercial"], exp: "More than 10 years" },
+  { name: "Sunita Verma", city: "Udaipur", company: "Verma Associates", deals: ["Residential"], exp: "1-3 years" },
+  { name: "Mohammed Iqbal", city: "Kota", company: "Iqbal Realtors", deals: ["Commercial", "Rental"], exp: "5-10 years" },
+  { name: "Deepak Joshi", city: "Ajmer", company: "Joshi Brothers Pvt Ltd", deals: ["Residential", "Agriculture", "Rental"], exp: "3-5 years" },
 ];
 
 const CUSTOMER_NAMES = [
@@ -131,14 +131,13 @@ async function main() {
 
     const result = await db.execute({
       sql: `INSERT INTO members (
-              member_code, name, dealer_name, mobile, alternate_mobile, city,
+              member_code, name, mobile, alternate_mobile, city,
               company_name, deals_in, experience, aadhaar_encrypted, aadhaar_index,
               aadhaar_last4, invite_code, created_at, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         code,
         member.name,
-        member.dealer,
         `98${String(10000000 + index * 111111).slice(0, 8)}`,
         index % 2 === 0 ? `97${String(20000000 + index * 222222).slice(0, 8)}` : null,
         member.city,
@@ -148,7 +147,8 @@ async function main() {
         encryptField(aadhaar),
         blindIndex(aadhaar),
         aadhaar.slice(-4),
-        generateInviteCode(),
+        /* Referral code is the Member ID itself — no separate invite code. */
+        code,
         daysAgo(registeredDaysAgo),
         pcId,
       ],

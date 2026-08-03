@@ -3,7 +3,6 @@ import {
   createDecipheriv,
   createHmac,
   randomBytes,
-  randomInt,
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
@@ -111,17 +110,6 @@ export function verifyPassword(password: string, stored: string): boolean {
   const actual = scryptSync(password, Buffer.from(salt, "base64url"), 64);
   if (actual.length !== expectedBuffer.length) return false;
   return timingSafeEqual(actual, expectedBuffer);
-}
-
-/** Invite code alphabet with 0/O and 1/I/L removed so codes stay dictatable. */
-const INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
-export function generateInviteCode(length = 8): string {
-  let code = "";
-  for (let i = 0; i < length; i += 1) {
-    code += INVITE_ALPHABET[randomInt(INVITE_ALPHABET.length)];
-  }
-  return code;
 }
 
 /** Masks an Aadhaar number for display: XXXX XXXX 1234. */

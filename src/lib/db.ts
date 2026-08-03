@@ -62,7 +62,6 @@ const SCHEMA = `
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     member_code       TEXT NOT NULL UNIQUE,
     name              TEXT NOT NULL,
-    dealer_name       TEXT,
     mobile            TEXT NOT NULL UNIQUE,
     alternate_mobile  TEXT,
     city              TEXT,

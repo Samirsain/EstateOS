@@ -22,7 +22,7 @@ export default async function EditMemberPage({
     <>
       <PageHeader
         title="Edit member"
-        description={`Member ID ${member.member_code} · invite code ${member.invite_code}`}
+        description={`Member ID ${member.member_code}`}
       />
       <Card className="p-6">
         <MemberForm
@@ -30,7 +30,6 @@ export default async function EditMemberPage({
           values={{
             memberCode: member.member_code,
             name: member.name,
-            dealerName: member.dealer_name ?? "",
             mobile: member.mobile,
             alternateMobile: member.alternate_mobile ?? "",
             city: member.city ?? "",

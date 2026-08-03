@@ -1,12 +1,5 @@
 import { getDb } from "./db";
-import type {
-  AuditLogRow,
-  CustomerRow,
-  CustomerWithMember,
-  DuplicateAttemptRow,
-  MemberRow,
-  UserRow,
-} from "./types";
+import type { CustomerRow, CustomerWithMember, MemberRow, UserRow } from "./types";
 
 export interface MemberListItem extends MemberRow {
   customer_count: number;
@@ -22,7 +15,6 @@ export async function listMembers(search = ""): Promise<MemberListItem[]> {
             LEFT JOIN customers c ON c.member_id = m.id
            WHERE (@search = '' OR m.name LIKE @term OR m.mobile LIKE @term
                   OR m.member_code LIKE @term OR m.invite_code LIKE @term
-                  OR IFNULL(m.dealer_name, '') LIKE @term
                   OR IFNULL(m.company_name, '') LIKE @term
                   OR IFNULL(m.city, '') LIKE @term)
            GROUP BY m.id
@@ -163,7 +155,6 @@ export interface DashboardStats {
   todayMembers: number;
   duplicateAttempts: number;
   duplicateAttemptsToday: number;
-  transfers: number;
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -182,7 +173,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     todayMembers,
     duplicateAttempts,
     duplicateAttemptsToday,
-    transfers,
   ] = await Promise.all([
     one("SELECT COUNT(*) AS value FROM customers"),
     one("SELECT COUNT(*) AS value FROM members"),
@@ -192,7 +182,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     one("SELECT COUNT(*) AS value FROM members WHERE date(created_at) = date('now')"),
     one("SELECT COUNT(*) AS value FROM duplicate_attempts"),
     one("SELECT COUNT(*) AS value FROM duplicate_attempts WHERE date(created_at) = date('now')"),
-    one("SELECT COUNT(*) AS value FROM transfers"),
   ]);
 
   return {
@@ -204,7 +193,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     todayMembers,
     duplicateAttempts,
     duplicateAttemptsToday,
-    transfers,
   };
 }
 
@@ -272,122 +260,6 @@ export async function getTopMembers(limit = 8): Promise<TopMember[]> {
     customers: Number(row.customers),
     investors: Number(row.investors),
   }));
-}
-
-export async function listDuplicateAttempts(
-  limit = 100,
-): Promise<(DuplicateAttemptRow & { attempted_by_name: string | null })[]> {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: `SELECT d.*, u.name AS attempted_by_name
-            FROM duplicate_attempts d
-            LEFT JOIN users u ON u.id = d.attempted_by
-           ORDER BY d.id DESC LIMIT ?`,
-    args: [limit],
-  });
-  return result.rows as unknown as (DuplicateAttemptRow & {
-    attempted_by_name: string | null;
-  })[];
-}
-
-export interface AuditFilters {
-  action?: string;
-  entity?: string;
-  limit?: number;
-}
-
-export async function listAuditLogs(
-  filters: AuditFilters = {},
-): Promise<AuditLogRow[]> {
-  const conditions: string[] = [];
-  const params: Record<string, string | number> = {
-    limit: filters.limit ?? 200,
-  };
-
-  if (filters.action) {
-    conditions.push("action LIKE @action");
-    params.action = `${filters.action}%`;
-  }
-  if (filters.entity) {
-    conditions.push("entity = @entity");
-    params.entity = filters.entity;
-  }
-
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const db = await getDb();
-
-  const result = await db.execute({
-    sql: `SELECT * FROM audit_logs ${where} ORDER BY id DESC LIMIT @limit`,
-    args: params,
-  });
-
-  return result.rows as unknown as AuditLogRow[];
-}
-
-export interface TransferListItem {
-  id: number;
-  customer_code: string;
-  customer_name: string;
-  from_code: string;
-  from_name: string;
-  to_code: string;
-  to_name: string;
-  reason: string | null;
-  transferred_by_name: string;
-  created_at: string;
-}
-
-export async function listTransfers(limit = 100): Promise<TransferListItem[]> {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: `SELECT t.id, t.reason, t.created_at,
-                 c.customer_code, c.name AS customer_name,
-                 f.member_code AS from_code, f.name AS from_name,
-                 g.member_code AS to_code,   g.name AS to_name,
-                 u.name AS transferred_by_name
-            FROM transfers t
-            JOIN customers c ON c.id = t.customer_id
-            JOIN members   f ON f.id = t.from_member_id
-            JOIN members   g ON g.id = t.to_member_id
-            JOIN users     u ON u.id = t.transferred_by
-           ORDER BY t.id DESC LIMIT ?`,
-    args: [limit],
-  });
-
-  return result.rows as unknown as TransferListItem[];
-}
-
-export interface CustomerTransferHistoryRow {
-  id: number;
-  customer_id: number;
-  from_member_id: number;
-  to_member_id: number;
-  reason: string | null;
-  transferred_by: number;
-  created_at: string;
-  from_code: string;
-  from_name: string;
-  to_code: string;
-  to_name: string;
-  actor_name: string;
-}
-
-export async function listTransfersForCustomer(
-  customerId: number,
-): Promise<CustomerTransferHistoryRow[]> {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: `SELECT t.*, f.member_code AS from_code, f.name AS from_name,
-                 g.member_code AS to_code, g.name AS to_name, u.name AS actor_name
-            FROM transfers t
-            JOIN members f ON f.id = t.from_member_id
-            JOIN members g ON g.id = t.to_member_id
-            JOIN users   u ON u.id = t.transferred_by
-           WHERE t.customer_id = ?
-           ORDER BY t.id DESC`,
-    args: [customerId],
-  });
-  return result.rows as unknown as CustomerTransferHistoryRow[];
 }
 
 export async function listUsers(): Promise<UserRow[]> {
