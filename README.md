@@ -33,8 +33,10 @@ and server-action guards), and UNIQUE constraints in the SQLite schema
 - One Aadhaar number = one customer (`UNIQUE` on a keyed blind index).
 - One customer = one member, permanently.
 - A member's referral code is their Member ID — no separate invite code.
-- Member IDs: `3C0001-DDMMYYYY`, sequential, monotonic and never reused,
-  generated inside the same transaction as the insert that consumes them.
+- Member IDs: `3C000`, `3C001`, `3C002`... (3 digits). Customer IDs: `TM0000`,
+  `TM0001`, `TM0002`... (4 digits). Both are sequential, monotonic and never
+  reused, generated inside the same transaction as the insert that consumes
+  them.
 
 ## Getting started
 

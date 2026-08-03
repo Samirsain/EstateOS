@@ -72,12 +72,6 @@ function daysAgo(days: number): string {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-function dateOf(days: number): Date {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date;
-}
-
 async function main() {
   const db = await getDb();
 
@@ -126,7 +120,7 @@ async function main() {
 
   for (const [index, member] of MEMBERS.entries()) {
     const registeredDaysAgo = 28 - index * 4;
-    const code = await nextMemberCode(db, dateOf(registeredDaysAgo));
+    const code = await nextMemberCode(db);
     const aadhaar = makeAadhaar(index + 1);
 
     const result = await db.execute({
@@ -177,7 +171,7 @@ async function main() {
     };
 
     const registeredDaysAgo = Math.max(0, 24 - Math.floor(index * 0.95));
-    const code = await nextCustomerCode(db, dateOf(registeredDaysAgo));
+    const code = await nextCustomerCode(db);
     const aadhaar = makeAadhaar(index + 100);
 
     await db.execute({
