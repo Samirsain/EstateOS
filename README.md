@@ -1,140 +1,109 @@
-# Customer & Member Management System (CMMS)
+<div align="center">
 
-A centralised office management system for member registration, customer
-tracking and referral ownership.
+# 🏢 3% Real Estate Management System
 
-Built on **Next.js 16** (App Router, Server Actions, Turbopack) with
-**React 19**, TypeScript, Tailwind CSS v4 and SQLite via
-**[libSQL](https://turso.tech/libsql)** (`@libsql/client`) — a local file in
-development, [Turso](https://turso.tech) in production.
+**A high-end, photography-first real estate ERP & inventory dashboard inspired by the Apple Design System.**
 
-> This project targets a pre-release Next.js. Check
-> `node_modules/next/dist/docs/` before assuming an API from older Next.js
-> versions still applies — the `middleware.ts` convention, for example, is
-> renamed to `proxy.ts` here.
+[![Next.js](https://img.shields.io/badge/Next.js-16.2-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-emerald?style=for-the-badge&logo=supabase)](https://supabase.com/)
+[![Prisma](https://img.shields.io/badge/Prisma-ORM-indigo?style=for-the-badge&logo=prisma)](https://www.prisma.io/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS_v4-38bdf8?style=for-the-badge&logo=tailwindcss)](https://tailwindcss.com/)
 
-## Roles
+</div>
 
-- **MD (Managing Director)** — full access: dashboard, members, customers,
-  settings.
-- **PC (Process Coordinator)** — registers and edits members, views
-  customers, searches records, prints forms. Cannot manage user accounts.
-- **Member** — an offline referral partner. Has no login. A member's
-  referral code is simply their Member ID.
+---
 
-Permissions are enforced in three places: `src/proxy.ts` (route-level
-redirect), `requirePermission`/`assertPermission` in `src/lib/auth.ts` (page
-and server-action guards), and UNIQUE constraints in the SQLite schema
-(last-resort data integrity).
+## ✨ Features
 
-## Business rules enforced
+- ** Apple Design Aesthetic**: Minimalist UI chrome featuring action blue (`#0066cc`) accents, edge-to-edge layouts, tight SF typography, frosted glass headers (`backdrop-blur-md`), and pill-shaped controls.
+- **🏡 Plot & Inventory Management**: Interactive plot status tracking (Available, Hold, Booked, Allotted), project categories (Residential, Commercial, Agriculture), auto-calculated total pricing, and real-time township management.
+- **👥 Member Referral System**: Offline dealer & agent onboarding, unique sequential member codes (`3C001`), and automatic customer referral ownership tracking.
+- **📑 Customer Onboarding**: Fast buyer registration, plot allotment transactions, and automatic ID sequence generation (`CUST0001`).
+- **🔐 Enterprise AES-256 Security**: Sensitive Aadhaar data encrypted at rest with AES-256-GCM and indexed via HMAC-SHA256 blind indexing for duplicate detection.
+- **⚡ High-Performance Supabase Backend**: Transitioned to Supabase PostgreSQL with Prisma ORM, request-level permission caching (`React.cache`), and `$transaction` query batching for near-zero latency.
 
-- One mobile number = one customer (`UNIQUE` on the column).
-- One Aadhaar number = one customer (`UNIQUE` on a keyed blind index).
-- One customer = one member, permanently.
-- A member's referral code is their Member ID — no separate invite code.
-- Member IDs: `3C000`, `3C001`, `3C002`... (3 digits). Customer IDs: `TM0000`,
-  `TM0001`, `TM0002`... (4 digits). Both are sequential, monotonic and never
-  reused, generated inside the same transaction as the insert that consumes
-  them.
+---
 
-## Getting started
+## 🛠️ Tech Stack
 
+| Domain | Technology |
+|---|---|
+| **Framework** | [Next.js 16 (App Router)](https://nextjs.org/) |
+| **Language** | [TypeScript](https://www.typescriptlang.org/) |
+| **Database & ORM** | [Supabase PostgreSQL](https://supabase.com/) + [Prisma ORM](https://www.prisma.io/) |
+| **Styling & UI** | [Tailwind CSS v4](https://tailwindcss.com/) + Custom Apple Design Tokens |
+| **Animations** | [Framer Motion](https://www.framer.com/motion/) |
+| **Auth & Security** | JWT (HS256) `httpOnly` Session + Node Crypto (scrypt / AES-256-GCM) |
+
+---
+
+## 🔑 Roles & Permissions
+
+- **MD (Managing Director)**: Full administrative authority — dashboard overview, inventory management, member onboarding, customer assignment, settings, and user management.
+- **PC (Process Coordinator)**: Day-to-day office management — plot allotments, member & customer registration, form printing, and inventory search.
+
+---
+
+## 🚀 Quick Start Guide
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/Samirsain/3d.git
+cd 3d
+```
+
+### 2. Install dependencies
 ```bash
 npm install
-npm run dev
 ```
 
-Visit `http://localhost:3000`. On first run the database is created at
-`data/cmms.db` with a default MD account:
+### 3. Environment Variables Setup
+Create a `.env` file in the root directory (or copy `.env.example`):
 
-- username `md`, password `ChangeMe@123` (override with `CMMS_MD_USERNAME`
-  / `CMMS_MD_PASSWORD` env vars before the first run)
+```env
+DATABASE_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres"
+APP_SECRET="c8e7943fa109825b42d1396a8f7b5e3c1d90a42e56f71893c0d24e18b9561234"
+```
 
-Sign in as MD and create a PC account from **Settings**, or seed demo data:
+### 4. Database Setup & Seeding
+Push the Prisma schema to Supabase PostgreSQL and seed default roles & admin credentials:
 
 ```bash
-npm run seed
+npx prisma db push
+npx tsx scripts/seed-supabase.ts
 ```
 
-This creates a PC account (`pc` / `Office@123`), six members and ~25
-customers so the dashboard has something to show.
+### 5. Start Local Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Deploying to Vercel (or any serverless host)
+---
 
-Vercel's filesystem is **read-only** in production, so the local SQLite file
-under `data/` cannot be created there. The app already handles this — when
-`TURSO_DATABASE_URL` is set it talks to a remote [Turso](https://turso.tech)
-database over HTTP instead of opening a local file; without it, it falls back
-to `data/cmms.db`, which only works on a host with a writable, persistent
-disk (a normal VM, Railway, Render, Fly.io, etc.).
+## 👤 Default Admin Credentials
 
-To deploy on Vercel:
-
-1. **Create a free Turso database** — [turso.tech](https://turso.tech), sign
-   up, then either use the web dashboard or the CLI:
-   ```bash
-   turso db create cmms
-   turso db show cmms --url          # -> TURSO_DATABASE_URL
-   turso db tokens create cmms       # -> TURSO_AUTH_TOKEN
-   ```
-2. **Add environment variables** in the Vercel project (Settings → Environment
-   Variables):
-   - `TURSO_DATABASE_URL` — the `libsql://...` URL from step 1
-   - `TURSO_AUTH_TOKEN` — the token from step 1
-   - `APP_SECRET` — `openssl rand -hex 32` (required in production; the app
-     throws on first request without it)
-   - optionally `CMMS_MD_USERNAME` / `CMMS_MD_PASSWORD` to set the initial MD
-     login instead of the `md` / `ChangeMe@123` default
-3. **Redeploy.** The schema and the initial MD account are created
-   automatically on first request — no separate migration step.
-
-Local development is unaffected: without `TURSO_DATABASE_URL` set, `npm run
-dev` and `npm run seed` keep using `data/cmms.db` as before.
-
-## Environment variables
-
-| Variable | Purpose | Default |
+| Role | Username | Password |
 |---|---|---|
-| `APP_SECRET` | Key material for session signing, field encryption and the Aadhaar/mobile blind index. **Required in production** — generate with `openssl rand -hex 32`. | dev-only fallback |
-| `TURSO_DATABASE_URL` | Remote libSQL/Turso database URL. When unset, falls back to a local SQLite file — **must be set on Vercel or any host with a read-only filesystem**. | unset (local file) |
-| `TURSO_AUTH_TOKEN` | Auth token for the Turso database above. | unset |
-| `CMMS_DB_PATH` | Local SQLite file location, used only when `TURSO_DATABASE_URL` is unset. | `./data/cmms.db` |
-| `CMMS_MD_USERNAME` / `CMMS_MD_PASSWORD` | Initial MD account, used only when the `users` table is empty. | `md` / `ChangeMe@123` |
+| **Managing Director (MD)** | `md` | `ChangeMe@123` |
 
-## Scripts
+---
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Start the dev server (Turbopack). |
-| `npm run build` | Production build. |
-| `npm run start` | Run the production build. |
-| `npm run lint` | ESLint. |
-| `npm run typecheck` | `tsc --noEmit`. |
-| `npm run seed` | Seed demo members, customers and a PC account. |
+## 🌐 Vercel Deployment
 
-## Security notes
+Deploy seamlessly to [Vercel](https://vercel.com/):
 
-- Aadhaar numbers are encrypted at rest with AES-256-GCM; duplicate checks
-  run against an HMAC-SHA256 blind index, never the plaintext or the
-  ciphertext. Only the last 4 digits are ever rendered in the UI.
-- Passwords are hashed with scrypt.
-- Sessions are signed JWTs (HS256) in an `httpOnly`, `sameSite=lax` cookie,
-  8-hour expiry.
+1. Import the repository in Vercel.
+2. Add the environment variables:
+   - `DATABASE_URL` (Supabase Transaction Pooler URL, Port 6543)
+   - `DIRECT_URL` (Supabase Direct URL, Port 5432)
+   - `APP_SECRET` (32-byte secret string)
+3. Deploy! Next.js will automatically compile and optimize the production bundle.
 
-## Project structure
+---
 
-```
-src/
-  app/
-    login/                  Sign-in
-    (app)/                  Authenticated shell (nav, header)
-      dashboard/            Cards + charts
-      members/               CRUD, search, print forms
-      customers/             View, search, print forms (view-only)
-      settings/              MD-only user management
-  components/               Shared UI, charts, nav, print sheet
-  lib/                       db (libSQL/Turso), auth, session, crypto, ids, queries
-  proxy.ts                   Route protection (Next 16's middleware)
-scripts/seed.ts               Demo data seed
-```
+<div align="center">
+  <sub>Built with ❤️ for <strong>3% Real Estate</strong></sub>
+</div>

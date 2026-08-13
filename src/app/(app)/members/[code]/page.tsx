@@ -49,6 +49,8 @@ export default async function MemberDetailPage({
   const customers = await listCustomers({ memberId: member.id });
   const dealsIn: string[] = JSON.parse(member.deals_in || "[]");
 
+  const canDeleteMember = await can(user.role, "members.delete");
+
   return (
     <>
       <PageHeader
@@ -213,7 +215,7 @@ export default async function MemberDetailPage({
             </div>
           </Card>
 
-          {can(user.role, "members.delete") ? (
+          {canDeleteMember ? (
             <Card>
               <CardHeader
                 title="Managing Director controls"

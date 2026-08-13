@@ -40,6 +40,8 @@ export default async function CustomerDetailPage({
   const customer = await getCustomerByCode(decodeURIComponent(code));
   if (!customer) notFound();
 
+  const canDeleteCustomer = await can(user.role, "customers.delete");
+
   return (
     <>
       <PageHeader
@@ -144,7 +146,7 @@ export default async function CustomerDetailPage({
           </div>
         </Card>
 
-        {can(user.role, "customers.delete") ? (
+        {canDeleteCustomer ? (
           <Card className="h-fit lg:col-start-3">
             <CardHeader
               title="Managing Director controls"
