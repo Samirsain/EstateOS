@@ -10,10 +10,11 @@ import {
   Th,
   formatDate,
 } from "@/components/ui";
-import { PERMISSIONS, requirePermission } from "@/lib/auth";
+import { getRolePermissionsMatrix, requirePermission } from "@/lib/auth";
 import { listUsers } from "@/lib/queries";
 import { setUserActiveAction } from "./actions";
 import { CreateUserForm, ResetPasswordForm } from "./user-forms";
+import { PermissionMatrixForm } from "./permission-matrix-form";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -21,12 +22,13 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const actor = await requirePermission("settings.manage");
   const users = await listUsers();
+  const matrix = await getRolePermissionsMatrix();
 
   return (
     <>
       <PageHeader
-        title="Settings"
-        description="Accounts and role permissions. Managing Director only."
+        title="Settings & Role Permissions"
+        description="User accounts and dynamic capability checkbox matrix. Managing Director only."
       />
 
       <div className="space-y-5">
@@ -118,41 +120,15 @@ export default async function SettingsPage() {
 
         <Card>
           <CardHeader
-            title="Role permissions"
-            description="Fixed capability matrix enforced on every page and server action."
+            title="Role Capability Checkbox Matrix"
+            description="Tick or untick permissions for each role. Changes take effect instantly across all pages & server actions."
           />
-          <Table>
-            <thead>
-              <tr>
-                <Th>Capability</Th>
-                <Th>MD</Th>
-                <Th>PC</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(PERMISSIONS).map(([permission, roles]) => (
-                <tr key={permission}>
-                  <Td className="font-medium">{permission}</Td>
-                  <Td>
-                    {(roles as readonly string[]).includes("MD") ? (
-                      <Badge tone="positive">Allowed</Badge>
-                    ) : (
-                      <span className="text-ink-muted">—</span>
-                    )}
-                  </Td>
-                  <Td>
-                    {(roles as readonly string[]).includes("PC") ? (
-                      <Badge tone="positive">Allowed</Badge>
-                    ) : (
-                      <span className="text-ink-muted">—</span>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+          <div className="p-1">
+            <PermissionMatrixForm initialMatrix={matrix} />
+          </div>
         </Card>
       </div>
     </>
   );
 }
+

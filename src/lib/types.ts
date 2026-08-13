@@ -72,6 +72,83 @@ export interface SessionUser {
   role: Role;
 }
 
+export type PlotStatus = "Available" | "Hold" | "Booked" | "Allotted";
+export const PLOT_STATUS_OPTIONS: PlotStatus[] = ["Available", "Hold", "Booked", "Allotted"];
+
+export type PlotType = "Residential" | "Commercial" | "Agriculture";
+export const PLOT_TYPE_OPTIONS: PlotType[] = ["Residential", "Commercial", "Agriculture"];
+
+export type PlotFacing = "East" | "West" | "North" | "South" | "Corner";
+export const PLOT_FACING_OPTIONS: PlotFacing[] = ["East", "West", "North", "South", "Corner"];
+
+export interface ProjectRow {
+  id: number;
+  code: string;
+  name: string;
+  location: string;
+  total_plots: number;
+  status: "Active" | "Completed" | "Upcoming";
+  project_type?: PlotType;
+  description: string | null;
+  created_at: string;
+  created_by: number | null;
+}
+
+export interface PlotRow {
+  id: number;
+  plot_code: string;
+  project_id: number;
+  plot_number: string;
+  block: string | null;
+  size_sqft: number;
+  rate_per_sqft: number;
+  total_price: number;
+  facing: PlotFacing | null;
+  plot_type?: PlotType;
+  status: PlotStatus;
+  notes: string | null;
+  created_at: string;
+  created_by: number | null;
+}
+
+export interface PlotWithDetails extends PlotRow {
+  project_name: string;
+  project_location: string;
+  allotment_code?: string | null;
+  customer_name?: string | null;
+  customer_code?: string | null;
+  member_name?: string | null;
+  member_code?: string | null;
+  booking_amount?: number | null;
+  payment_status?: string | null;
+}
+
+export interface PlotAllotmentRow {
+  id: number;
+  allotment_code: string;
+  plot_id: number;
+  customer_id: number;
+  member_id: number;
+  agreed_price: number;
+  booking_amount: number;
+  payment_status: "Token" | "Partial" | "Completed";
+  allotment_date: string;
+  notes: string | null;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface PlotAllotmentWithDetails extends PlotAllotmentRow {
+  plot_number: string;
+  plot_code: string;
+  project_name: string;
+  customer_name: string;
+  customer_code: string;
+  customer_mobile: string;
+  member_name: string;
+  member_code: string;
+}
+
 /** Shape returned by every server action so forms can render feedback uniformly. */
 export interface ActionState {
   ok: boolean;
@@ -83,3 +160,4 @@ export interface ActionState {
 }
 
 export const EMPTY_ACTION_STATE: ActionState = { ok: false, message: "" };
+

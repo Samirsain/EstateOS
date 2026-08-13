@@ -21,11 +21,9 @@ export async function loginAction(
   }
 
   const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM users WHERE username = ?",
-    args: [username],
+  const row = await db.users.findUnique({
+    where: { username },
   });
-  const row = result.rows[0] as unknown as UserRow | undefined;
 
   /*
    * A single generic message for unknown user, wrong password and disabled

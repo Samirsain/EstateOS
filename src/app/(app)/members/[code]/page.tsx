@@ -19,7 +19,7 @@ import {
 } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
 import { can, requirePermission } from "@/lib/auth";
-import { maskLast4 } from "@/lib/display";
+import { formatAadhaarForUser } from "@/lib/display";
 import { getMemberByCode, listCustomers } from "@/lib/queries";
 import { deleteMemberAction, setMemberActiveAction } from "../actions";
 
@@ -122,11 +122,15 @@ export default async function MemberDetailPage({
                   {
                     label: "Aadhaar number",
                     value: (
-                      <span className="tabular">
-                        {maskLast4(member.aadhaar_last4)}
-                        <span className="ml-2 text-xs text-ink-muted">
-                          (encrypted at rest)
-                        </span>
+                      <span className="tabular font-semibold text-ink">
+                        {formatAadhaarForUser(user.role, member.aadhaar_encrypted, member.aadhaar_last4)}
+                        {user.role === "MD" ? (
+                          <span className="ml-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            MD Full View
+                          </span>
+                        ) : (
+                          <span className="ml-2 text-xs text-ink-muted">(masked)</span>
+                        )}
                       </span>
                     ),
                   },

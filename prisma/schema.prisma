@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model users {
+  id             Int       @id @default(autoincrement())
+  username       String    @unique
+  name           String
+  role           String    // 'MD' or 'PC'
+  password_hash  String
+  is_active      Int       @default(1)
+  created_at     DateTime  @default(now())
+  created_by     Int?
+
+  // Relations
+  created_members      members[]            @relation("MemberCreatedBy")
+  created_customers    customers[]          @relation("CustomerCreatedBy")
+  transfers_done       transfers[]          @relation("TransferDoneBy")
+  duplicate_attempts   duplicate_attempts[] @relation("DuplicateAttemptBy")
+  audit_logs           audit_logs[]         @relation("AuditLogBy")
+  created_projects     projects[]           @relation("ProjectCreatedBy")
+  created_plots        plots[]              @relation("PlotCreatedBy")
+  created_allotments   plot_allotments[]    @relation("AllotmentCreatedBy")
+  created_users        users[]              @relation("UserCreatedBy")
+  creator              users?               @relation("UserCreatedBy", fields: [created_by], references: [id])
+}
+
+model members {
+  id                Int       @id @default(autoincrement())
+  member_code       String    @unique
+  name              String
+  mobile            String    @unique
+  alternate_mobile  String?
+  city              String?
+  company_name      String?
+  deals_in          String    @default("[]")
+  experience        String?
+  aadhaar_encrypted String
+  aadhaar_index     String    @unique
+  aadhaar_last4     String
+  invite_code       String    @unique
+  is_active         Int       @default(1)
+  created_at        DateTime  @default(now())
+  created_by        Int?
+
+  // Relations
+  creator           users?    @relation("MemberCreatedBy", fields: [created_by], references: [id])
+  customers         customers[]
+  transfers_from    transfers[] @relation("TransferFromMember")
+  transfers_to      transfers[] @relation("TransferToMember")
+  allotments        plot_allotments[]
+}
+
+model customers {
+  id                Int       @id @default(autoincrement())
+  customer_code     String    @unique
+  name              String
+  mobile            String    @unique
+  customer_type     String    // 'User', 'Investor'
+  aadhaar_encrypted String
+  aadhaar_index     String    @unique
+  aadhaar_last4     String
+  member_id         Int?
+  invite_code       String?
+  created_at        DateTime  @default(now())
+  created_by        Int?
+
+  // Relations
+  member            members?  @relation(fields: [member_id], references: [id])
+  creator           users?    @relation("CustomerCreatedBy", fields: [created_by], references: [id])
+  transfers         transfers[]
+  allotments        plot_allotments[]
+}
+
+model transfers {
+  id             Int       @id @default(autoincrement())
+  customer_id    Int
+  from_member_id Int
+  to_member_id   Int
+  reason         String?
+  transferred_by Int
+  created_at     DateTime  @default(now())
+
+  // Relations
+  customer       customers @relation(fields: [customer_id], references: [id])
+  from_member    members   @relation("TransferFromMember", fields: [from_member_id], references: [id])
+  to_member      members   @relation("TransferToMember", fields: [to_member_id], references: [id])
+  transferrer    users     @relation("TransferDoneBy", fields: [transferred_by], references: [id])
+}
+
+model duplicate_attempts {
+  id             Int       @id @default(autoincrement())
+  field          String    // 'mobile' or 'aadhaar'
+  entity         String    // 'customer' or 'member'
+  masked_value   String
+  existing_code  String?
+  attempted_name String?
+  attempted_by   Int?
+  created_at     DateTime  @default(now())
+
+  // Relations
+  attempter      users?    @relation("DuplicateAttemptBy", fields: [attempted_by], references: [id])
+}
+
+model audit_logs {
+  id         Int       @id @default(autoincrement())
+  actor_id   Int?
+  actor_name String
+  actor_role String
+  action     String
+  entity     String
+  entity_ref String?
+  details    String?
+  created_at DateTime  @default(now())
+
+  // Relations
+  actor      users?    @relation("AuditLogBy", fields: [actor_id], references: [id])
+}
+
+model id_sequences {
+  prefix   String @id
+  last_seq Int    @default(0)
+}
+
+model projects {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  name          String
+  location      String
+  total_plots   Int       @default(0)
+  status        String    @default("Active") // 'Active', 'Completed', 'Upcoming'
+  description   String?
+  created_at    DateTime  @default(now())
+  created_by    Int?
+  project_type  String?   @default("Residential")
+
+  // Relations
+  creator       users?    @relation("ProjectCreatedBy", fields: [created_by], references: [id])
+  plots         plots[]
+}
+
+model plots {
+  id            Int       @id @default(autoincrement())
+  plot_code     String    @unique
+  project_id    Int
+  plot_number   String
+  block         String?
+  size_sqft     Float
+  rate_per_sqft Float
+  total_price   Float
+  facing        String?   // 'East', 'West', 'North', 'South', 'Corner'
+  status        String    @default("Available") // 'Available', 'Hold', 'Booked', 'Allotted'
+  notes         String?
+  created_at    DateTime  @default(now())
+  created_by    Int?
+  plot_type     String?   @default("Residential")
+
+  // Relations
+  project       projects  @relation(fields: [project_id], references: [id])
+  creator       users?    @relation("PlotCreatedBy", fields: [created_by], references: [id])
+  allotment     plot_allotments?
+}
+
+model plot_allotments {
+  id             Int       @id @default(autoincrement())
+  allotment_code String    @unique
+  plot_id        Int       @unique
+  customer_id    Int
+  member_id      Int?
+  agreed_price   Float
+  booking_amount Float
+  payment_status String    @default("Partial") // 'Token', 'Partial', 'Completed'
+  allotment_date DateTime  @default(now())
+  notes          String?
+  created_by     Int?
+  created_at     DateTime  @default(now())
+
+  // Relations
+  plot           plots     @relation(fields: [plot_id], references: [id])
+  customer       customers @relation(fields: [customer_id], references: [id])
+  member         members?  @relation(fields: [member_id], references: [id])
+  creator        users?    @relation("AllotmentCreatedBy", fields: [created_by], references: [id])
+}
+
+model role_permissions {
+  role       String
+  permission String
+  allowed    Int    @default(1)
+
+  @@id([role, permission])
+}

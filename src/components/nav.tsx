@@ -16,21 +16,23 @@ export function SidebarNav({ items }: { items: NavItem[] }) {
     <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
       {items.map((item) => {
         const active =
-          pathname === item.href || pathname.startsWith(`${item.href}/`);
+          pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
         return (
           <Link
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex items-center justify-between gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
+            className={`flex items-center justify-between gap-2 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
               active
-                ? "bg-brand-50 text-brand-700"
-                : "text-ink-muted hover:bg-gray-100 hover:text-ink"
+                ? "bg-[#0066cc] text-white shadow-sm"
+                : "text-[#7a7a7a] hover:bg-black/5 hover:text-[#1d1d1f]"
             }`}
           >
             {item.label}
             {item.mdOnly ? (
-              <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-gray-600">
+              <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
+                active ? "bg-white/20 text-white" : "bg-[#e0e0e0] text-[#1d1d1f]"
+              }`}>
                 MD
               </span>
             ) : null}

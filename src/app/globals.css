@@ -2,27 +2,35 @@
 
 @theme {
   --color-surface: #ffffff;
-  --color-canvas: #f5f7fa;
-  --color-ink: #101828;
-  --color-ink-muted: #667085;
-  --color-line: #e4e7ec;
+  --color-canvas: #f5f5f7;
+  --color-canvas-parchment: #f5f5f7;
+  --color-surface-pearl: #fafafc;
+  --color-ink: #1d1d1f;
+  --color-ink-muted: #7a7a7a;
+  --color-line: #e0e0e0;
+  --color-hairline: #e0e0e0;
+  --color-divider-soft: #f0f0f0;
 
-  --color-brand-50: #eef4ff;
-  --color-brand-100: #dbe7ff;
-  --color-brand-500: #3b6fe0;
-  --color-brand-600: #2f5bc4;
-  --color-brand-700: #26499d;
+  --color-primary: #0066cc;
+  --color-primary-focus: #0071e3;
+  --color-primary-on-dark: #2997ff;
 
-  --color-positive: #067647;
-  --color-positive-soft: #ecfdf3;
-  --color-warning: #b54708;
-  --color-warning-soft: #fffaeb;
-  --color-danger: #b42318;
-  --color-danger-soft: #fef3f2;
+  --color-brand-50: #f0f6ff;
+  --color-brand-100: #e0edff;
+  --color-brand-500: #0066cc;
+  --color-brand-600: #0066cc;
+  --color-brand-700: #0052a3;
+
+  --color-positive: #107c41;
+  --color-positive-soft: #f0fdf4;
+  --color-warning: #d97706;
+  --color-warning-soft: #fffbeb;
+  --color-danger: #e11d48;
+  --color-danger-soft: #fff1f2;
 
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue",
+    ui-sans-serif, system-ui, Inter, Arial, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -37,6 +45,12 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Apple Display Tight Tracking */
+.tracking-tight-apple {
+  letter-spacing: -0.022em;
 }
 
 /* Tabular figures keep ID columns and money-like counts aligned. */

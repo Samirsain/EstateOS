@@ -3,8 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Customer & Member Management System",
-    template: "%s · CMMS",
+    default: "3% Real Estate Management",
+    template: "%s · 3% Real Estate",
   },
   description:
     "Centralised office management for member registration, customer onboarding and referral ownership.",
@@ -16,8 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
-      <body className="min-h-full">{children}</body>
+    <html lang="en" className="h-full" suppressHydrationWarning>
+      <body className="min-h-full" suppressHydrationWarning>{children}</body>
     </html>
   );
 }

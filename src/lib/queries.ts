@@ -9,44 +9,60 @@ export async function listMembers(search = ""): Promise<MemberListItem[]> {
   const trimmed = search.trim();
   const db = await getDb();
 
-  const result = await db.execute({
-    sql: `SELECT m.*, COUNT(c.id) AS customer_count
-            FROM members m
-            LEFT JOIN customers c ON c.member_id = m.id
-           WHERE (@search = '' OR m.name LIKE @term OR m.mobile LIKE @term
-                  OR m.member_code LIKE @term OR m.invite_code LIKE @term
-                  OR IFNULL(m.company_name, '') LIKE @term
-                  OR IFNULL(m.city, '') LIKE @term)
-           GROUP BY m.id
-           ORDER BY m.id DESC`,
-    args: { search: trimmed, term: `%${trimmed}%` },
+  const members = await db.members.findMany({
+    where: trimmed
+      ? {
+          OR: [
+            { name: { contains: trimmed, mode: "insensitive" } },
+            { mobile: { contains: trimmed } },
+            { member_code: { contains: trimmed, mode: "insensitive" } },
+            { invite_code: { contains: trimmed, mode: "insensitive" } },
+            { company_name: { contains: trimmed, mode: "insensitive" } },
+            { city: { contains: trimmed, mode: "insensitive" } },
+          ],
+        }
+      : undefined,
+    include: {
+      _count: { select: { customers: true } },
+    },
+    orderBy: { id: "desc" },
   });
 
-  return result.rows as unknown as MemberListItem[];
+  return members.map((m) => ({
+    ...m,
+    customer_count: m._count.customers,
+    created_at: m.created_at.toISOString(),
+  })) as unknown as MemberListItem[];
 }
 
 export async function getMemberByCode(
   code: string,
 ): Promise<MemberListItem | undefined> {
   const db = await getDb();
-  const result = await db.execute({
-    sql: `SELECT m.*, COUNT(c.id) AS customer_count
-            FROM members m
-            LEFT JOIN customers c ON c.member_id = m.id
-           WHERE m.member_code = ?
-           GROUP BY m.id`,
-    args: [code],
+  const m = await db.members.findUnique({
+    where: { member_code: code },
+    include: {
+      _count: { select: { customers: true } },
+    },
   });
-  return result.rows[0] as unknown as MemberListItem | undefined;
+
+  if (!m) return undefined;
+
+  return {
+    ...m,
+    customer_count: m._count.customers,
+    created_at: m.created_at.toISOString(),
+  } as unknown as MemberListItem;
 }
 
 export async function getMemberById(id: number): Promise<MemberRow | undefined> {
   const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM members WHERE id = ?",
-    args: [id],
-  });
-  return result.rows[0] as unknown as MemberRow | undefined;
+  const m = await db.members.findUnique({ where: { id } });
+  if (!m) return undefined;
+  return {
+    ...m,
+    created_at: m.created_at.toISOString(),
+  } as unknown as MemberRow;
 }
 
 /** Active members, for the "assign to member" dropdown on customer forms. */
@@ -54,11 +70,19 @@ export async function listActiveMembersForSelect(): Promise<
   Pick<MemberRow, "id" | "member_code" | "name" | "invite_code" | "mobile">[]
 > {
   const db = await getDb();
-  const result = await db.execute(
-    `SELECT id, member_code, name, invite_code, mobile
-       FROM members WHERE is_active = 1 ORDER BY name COLLATE NOCASE`,
-  );
-  return result.rows as unknown as Pick<
+  const members = await db.members.findMany({
+    where: { is_active: 1 },
+    select: {
+      id: true,
+      member_code: true,
+      name: true,
+      invite_code: true,
+      mobile: true,
+    },
+    orderBy: { name: "asc" },
+  });
+
+  return members as unknown as Pick<
     MemberRow,
     "id" | "member_code" | "name" | "invite_code" | "mobile"
   >[];
@@ -76,74 +100,86 @@ export async function listCustomers(
   filters: CustomerFilters = {},
 ): Promise<CustomerWithMember[]> {
   const search = (filters.search ?? "").trim();
-  const term = `%${search}%`;
-  const conditions: string[] = [];
-  const params: Record<string, string | number> = {};
-
-  if (search) {
-    conditions.push(
-      `(c.name LIKE @term OR c.mobile LIKE @term OR c.customer_code LIKE @term
-        OR c.invite_code LIKE @term OR c.aadhaar_last4 = @exact
-        OR m.name LIKE @term OR m.member_code LIKE @term)`,
-    );
-    params.term = term;
-    params.exact = search.replace(/\D/g, "").slice(-4);
-  }
-  if (filters.type) {
-    conditions.push("c.customer_type = @type");
-    params.type = filters.type;
-  }
-  if (filters.memberId) {
-    conditions.push("c.member_id = @memberId");
-    params.memberId = filters.memberId;
-  }
-  if (filters.from) {
-    conditions.push("date(c.created_at) >= date(@from)");
-    params.from = filters.from;
-  }
-  if (filters.to) {
-    conditions.push("date(c.created_at) <= date(@to)");
-    params.to = filters.to;
-  }
-
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const exactLast4 = search.replace(/\D/g, "").slice(-4);
   const db = await getDb();
 
-  const result = await db.execute({
-    sql: `SELECT c.*, m.name AS member_name, m.member_code AS member_code
-            FROM customers c
-            JOIN members m ON m.id = c.member_id
-            ${where}
-           ORDER BY c.id DESC`,
-    args: params,
+  const whereConditions: any[] = [];
+
+  if (search) {
+    whereConditions.push({
+      OR: [
+        { name: { contains: search, mode: "insensitive" } },
+        { mobile: { contains: search } },
+        { customer_code: { contains: search, mode: "insensitive" } },
+        { invite_code: { contains: search, mode: "insensitive" } },
+        ...(exactLast4 ? [{ aadhaar_last4: exactLast4 }] : []),
+        { member: { name: { contains: search, mode: "insensitive" } } },
+        { member: { member_code: { contains: search, mode: "insensitive" } } },
+      ],
+    });
+  }
+
+  if (filters.type) {
+    whereConditions.push({ customer_type: filters.type });
+  }
+
+  if (filters.memberId) {
+    whereConditions.push({ member_id: filters.memberId });
+  }
+
+  if (filters.from) {
+    whereConditions.push({ created_at: { gte: new Date(filters.from) } });
+  }
+
+  if (filters.to) {
+    const toDate = new Date(filters.to);
+    toDate.setHours(23, 59, 59, 999);
+    whereConditions.push({ created_at: { lte: toDate } });
+  }
+
+  const customers = await db.customers.findMany({
+    where: whereConditions.length ? { AND: whereConditions } : undefined,
+    include: { member: true },
+    orderBy: { id: "desc" },
   });
 
-  return result.rows as unknown as CustomerWithMember[];
+  return customers.map((c) => ({
+    ...c,
+    member_name: c.member?.name ?? null,
+    member_code: c.member?.member_code ?? null,
+    created_at: c.created_at.toISOString(),
+  })) as unknown as CustomerWithMember[];
 }
 
 export async function getCustomerByCode(
   code: string,
 ): Promise<CustomerWithMember | undefined> {
   const db = await getDb();
-  const result = await db.execute({
-    sql: `SELECT c.*, m.name AS member_name, m.member_code AS member_code
-            FROM customers c
-            JOIN members m ON m.id = c.member_id
-           WHERE c.customer_code = ?`,
-    args: [code],
+  const c = await db.customers.findUnique({
+    where: { customer_code: code },
+    include: { member: true },
   });
-  return result.rows[0] as unknown as CustomerWithMember | undefined;
+
+  if (!c) return undefined;
+
+  return {
+    ...c,
+    member_name: c.member?.name ?? null,
+    member_code: c.member?.member_code ?? null,
+    created_at: c.created_at.toISOString(),
+  } as unknown as CustomerWithMember;
 }
 
 export async function getCustomerById(
   id: number,
 ): Promise<CustomerRow | undefined> {
   const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM customers WHERE id = ?",
-    args: [id],
-  });
-  return result.rows[0] as unknown as CustomerRow | undefined;
+  const c = await db.customers.findUnique({ where: { id } });
+  if (!c) return undefined;
+  return {
+    ...c,
+    created_at: c.created_at.toISOString(),
+  } as unknown as CustomerRow;
 }
 
 export interface DashboardStats {
@@ -155,14 +191,17 @@ export interface DashboardStats {
   todayMembers: number;
   duplicateAttempts: number;
   duplicateAttemptsToday: number;
+  totalPlots: number;
+  availablePlots: number;
+  holdPlots: number;
+  allottedPlots: number;
+  totalInventoryValue: number;
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const db = await getDb();
-  const one = async (sql: string): Promise<number> => {
-    const result = await db.execute(sql);
-    return Number(result.rows[0]?.value ?? 0);
-  };
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
 
   const [
     totalCustomers,
@@ -173,15 +212,25 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     todayMembers,
     duplicateAttempts,
     duplicateAttemptsToday,
-  ] = await Promise.all([
-    one("SELECT COUNT(*) AS value FROM customers"),
-    one("SELECT COUNT(*) AS value FROM members"),
-    one("SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'Investor'"),
-    one("SELECT COUNT(*) AS value FROM customers WHERE customer_type = 'User'"),
-    one("SELECT COUNT(*) AS value FROM customers WHERE date(created_at) = date('now')"),
-    one("SELECT COUNT(*) AS value FROM members WHERE date(created_at) = date('now')"),
-    one("SELECT COUNT(*) AS value FROM duplicate_attempts"),
-    one("SELECT COUNT(*) AS value FROM duplicate_attempts WHERE date(created_at) = date('now')"),
+    totalPlots,
+    availablePlots,
+    holdPlots,
+    allottedPlots,
+    priceSum,
+  ] = await db.$transaction([
+    db.customers.count(),
+    db.members.count(),
+    db.customers.count({ where: { customer_type: "Investor" } }),
+    db.customers.count({ where: { customer_type: "User" } }),
+    db.customers.count({ where: { created_at: { gte: startOfToday } } }),
+    db.members.count({ where: { created_at: { gte: startOfToday } } }),
+    db.duplicate_attempts.count(),
+    db.duplicate_attempts.count({ where: { created_at: { gte: startOfToday } } }),
+    db.plots.count(),
+    db.plots.count({ where: { status: "Available" } }),
+    db.plots.count({ where: { status: "Hold" } }),
+    db.plots.count({ where: { status: { in: ["Booked", "Allotted"] } } }),
+    db.plots.aggregate({ _sum: { total_price: true } }),
   ]);
 
   return {
@@ -193,6 +242,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     todayMembers,
     duplicateAttempts,
     duplicateAttemptsToday,
+    totalPlots,
+    availablePlots,
+    holdPlots,
+    allottedPlots,
+    totalInventoryValue: priceSum._sum.total_price ?? 0,
   };
 }
 
@@ -202,31 +256,46 @@ export interface GrowthPoint {
   members: number;
 }
 
-/**
- * Registrations per day for the last `days` days. The day spine is generated in
- * SQL so days with no registrations still appear as zero rather than being
- * dropped from the series.
- */
 export async function getGrowthSeries(days = 30): Promise<GrowthPoint[]> {
   const db = await getDb();
-  const result = await db.execute({
-    sql: `WITH RECURSIVE spine(day, n) AS (
-            SELECT date('now', '-' || (@days - 1) || ' day'), 1
-            UNION ALL
-            SELECT date(day, '+1 day'), n + 1 FROM spine WHERE n < @days
-          )
-          SELECT spine.day AS day,
-                 (SELECT COUNT(*) FROM customers WHERE date(created_at) = spine.day) AS customers,
-                 (SELECT COUNT(*) FROM members   WHERE date(created_at) = spine.day) AS members
-            FROM spine
-           ORDER BY spine.day`,
-    args: { days },
-  });
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - (days - 1));
+  startDate.setHours(0, 0, 0, 0);
 
-  return result.rows.map((row) => ({
-    day: String(row.day),
-    customers: Number(row.customers),
-    members: Number(row.members),
+  const [customers, members] = await Promise.all([
+    db.customers.findMany({
+      where: { created_at: { gte: startDate } },
+      select: { created_at: true },
+    }),
+    db.members.findMany({
+      where: { created_at: { gte: startDate } },
+      select: { created_at: true },
+    }),
+  ]);
+
+  const series: Record<string, { customers: number; members: number }> = {};
+
+  for (let i = 0; i < days; i++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toISOString().slice(0, 10);
+    series[dateStr] = { customers: 0, members: 0 };
+  }
+
+  for (const c of customers) {
+    const dateStr = c.created_at.toISOString().slice(0, 10);
+    if (series[dateStr]) series[dateStr].customers++;
+  }
+
+  for (const m of members) {
+    const dateStr = m.created_at.toISOString().slice(0, 10);
+    if (series[dateStr]) series[dateStr].members++;
+  }
+
+  return Object.entries(series).map(([day, val]) => ({
+    day,
+    customers: val.customers,
+    members: val.members,
   }));
 }
 
@@ -240,32 +309,186 @@ export interface TopMember {
 
 export async function getTopMembers(limit = 8): Promise<TopMember[]> {
   const db = await getDb();
-  const result = await db.execute({
-    sql: `SELECT m.member_code, m.name, m.city,
-                 COUNT(c.id) AS customers,
-                 SUM(CASE WHEN c.customer_type = 'Investor' THEN 1 ELSE 0 END) AS investors
-            FROM members m
-            LEFT JOIN customers c ON c.member_id = m.id
-           GROUP BY m.id
-          HAVING customers > 0
-           ORDER BY customers DESC, m.name COLLATE NOCASE
-           LIMIT ?`,
-    args: [limit],
+  const members = await db.members.findMany({
+    include: {
+      customers: true,
+    },
   });
 
-  return result.rows.map((row) => ({
-    member_code: String(row.member_code),
-    name: String(row.name),
-    city: row.city === null ? null : String(row.city),
-    customers: Number(row.customers),
-    investors: Number(row.investors),
-  }));
+  const list: TopMember[] = members
+    .map((m) => ({
+      member_code: m.member_code,
+      name: m.name,
+      city: m.city,
+      customers: m.customers.length,
+      investors: m.customers.filter((c) => c.customer_type === "Investor").length,
+    }))
+    .filter((m) => m.customers > 0)
+    .sort((a, b) => b.customers - a.customers)
+    .slice(0, limit);
+
+  return list;
+}
+
+export async function listProjects(): Promise<import("./types").ProjectRow[]> {
+  const db = await getDb();
+  const projects = await db.projects.findMany({
+    orderBy: { id: "desc" },
+  });
+  return projects.map((p) => ({
+    ...p,
+    created_at: p.created_at.toISOString(),
+  })) as unknown as import("./types").ProjectRow[];
+}
+
+export interface PlotFilters {
+  search?: string;
+  projectId?: number;
+  status?: string;
+  facing?: string;
+}
+
+export async function listPlots(filters: PlotFilters = {}): Promise<import("./types").PlotWithDetails[]> {
+  const db = await getDb();
+  const search = (filters.search ?? "").trim();
+
+  const whereConditions: any[] = [];
+
+  if (search) {
+    whereConditions.push({
+      OR: [
+        { plot_number: { contains: search, mode: "insensitive" } },
+        { plot_code: { contains: search, mode: "insensitive" } },
+        { block: { contains: search, mode: "insensitive" } },
+        { project: { name: { contains: search, mode: "insensitive" } } },
+      ],
+    });
+  }
+
+  if (filters.projectId) {
+    whereConditions.push({ project_id: filters.projectId });
+  }
+
+  if (filters.status) {
+    whereConditions.push({ status: filters.status });
+  }
+
+  if (filters.facing) {
+    whereConditions.push({ facing: filters.facing });
+  }
+
+  const plots = await db.plots.findMany({
+    where: whereConditions.length ? { AND: whereConditions } : undefined,
+    include: {
+      project: true,
+      allotment: {
+        include: {
+          customer: true,
+          member: true,
+        },
+      },
+    },
+    orderBy: { id: "desc" },
+  });
+
+  return plots.map((p) => ({
+    ...p,
+    project_name: p.project.name,
+    project_location: p.project.location,
+    allotment_code: p.allotment?.allotment_code ?? null,
+    booking_amount: p.allotment?.booking_amount ?? null,
+    payment_status: p.allotment?.payment_status ?? null,
+    customer_name: p.allotment?.customer.name ?? null,
+    customer_code: p.allotment?.customer.customer_code ?? null,
+    member_name: p.allotment?.member?.name ?? null,
+    member_code: p.allotment?.member?.member_code ?? null,
+    created_at: p.created_at.toISOString(),
+  })) as unknown as import("./types").PlotWithDetails[];
+}
+
+export async function getPlotByCode(code: string): Promise<import("./types").PlotWithDetails | undefined> {
+  const db = await getDb();
+  const p = await db.plots.findUnique({
+    where: { plot_code: code },
+    include: {
+      project: true,
+      allotment: {
+        include: {
+          customer: true,
+          member: true,
+        },
+      },
+    },
+  });
+
+  if (!p) return undefined;
+
+  return {
+    ...p,
+    project_name: p.project.name,
+    project_location: p.project.location,
+    allotment_code: p.allotment?.allotment_code ?? null,
+    booking_amount: p.allotment?.booking_amount ?? null,
+    payment_status: p.allotment?.payment_status ?? null,
+    customer_name: p.allotment?.customer.name ?? null,
+    customer_code: p.allotment?.customer.customer_code ?? null,
+    member_name: p.allotment?.member?.name ?? null,
+    member_code: p.allotment?.member?.member_code ?? null,
+    created_at: p.created_at.toISOString(),
+  } as unknown as import("./types").PlotWithDetails;
+}
+
+export async function listPlotAllotments(): Promise<import("./types").PlotAllotmentWithDetails[]> {
+  const db = await getDb();
+  const allotments = await db.plot_allotments.findMany({
+    include: {
+      plot: {
+        include: { project: true },
+      },
+      customer: true,
+      member: true,
+    },
+    orderBy: { id: "desc" },
+  });
+
+  return allotments.map((pa) => ({
+    ...pa,
+    plot_number: pa.plot.plot_number,
+    plot_code: pa.plot.plot_code,
+    project_name: pa.plot.project.name,
+    customer_name: pa.customer.name,
+    customer_code: pa.customer.customer_code,
+    customer_mobile: pa.customer.mobile,
+    member_name: pa.member?.name ?? null,
+    member_code: pa.member?.member_code ?? null,
+    allotment_date: pa.allotment_date.toISOString(),
+    created_at: pa.created_at.toISOString(),
+  })) as unknown as import("./types").PlotAllotmentWithDetails[];
+}
+
+export async function getActivePlotsForSelect(): Promise<import("./types").PlotWithDetails[]> {
+  const db = await getDb();
+  const plots = await db.plots.findMany({
+    where: { status: { in: ["Available", "Hold"] } },
+    include: { project: true },
+    orderBy: { plot_number: "asc" },
+  });
+
+  return plots.map((p) => ({
+    ...p,
+    project_name: p.project.name,
+    project_location: p.project.location,
+    created_at: p.created_at.toISOString(),
+  })) as unknown as import("./types").PlotWithDetails[];
 }
 
 export async function listUsers(): Promise<UserRow[]> {
   const db = await getDb();
-  const result = await db.execute(
-    "SELECT * FROM users ORDER BY role, username COLLATE NOCASE",
-  );
-  return result.rows as unknown as UserRow[];
+  const users = await db.users.findMany({
+    orderBy: [{ role: "asc" }, { username: "asc" }],
+  });
+  return users.map((u) => ({
+    ...u,
+    created_at: u.created_at.toISOString(),
+  })) as unknown as UserRow[];
 }

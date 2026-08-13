@@ -5,7 +5,7 @@ import { recordAudit } from "@/lib/audit";
 import { assertPermission } from "@/lib/auth";
 import { hashPassword } from "@/lib/crypto";
 import { getDb } from "@/lib/db";
-import type { ActionState, UserRow } from "@/lib/types";
+import type { ActionState } from "@/lib/types";
 import { ROLES } from "@/lib/types";
 import { requireText } from "@/lib/validation";
 
@@ -38,11 +38,9 @@ export async function createUserAction(
   }
 
   const db = await getDb();
-  const existingResult = await db.execute({
-    sql: "SELECT * FROM users WHERE username = ?",
-    args: [username],
+  const existing = await db.users.findUnique({
+    where: { username },
   });
-  const existing = existingResult.rows[0] as unknown as UserRow | undefined;
 
   if (existing) {
     return {
@@ -52,10 +50,14 @@ export async function createUserAction(
     };
   }
 
-  await db.execute({
-    sql: `INSERT INTO users (username, name, role, password_hash, created_by)
-          VALUES (?, ?, ?, ?, ?)`,
-    args: [username, name, role, hashPassword(password), actor.id],
+  await db.users.create({
+    data: {
+      username,
+      name,
+      role,
+      password_hash: hashPassword(password),
+      created_by: actor.id,
+    },
   });
 
   await recordAudit({
@@ -88,12 +90,13 @@ export async function resetPasswordAction(
   }
 
   const db = await getDb();
-  const result = await db.execute({
-    sql: "UPDATE users SET password_hash = ? WHERE username = ?",
-    args: [hashPassword(password), username],
-  });
+  const user = await db.users.findUnique({ where: { username } });
+  if (!user) return { ok: false, message: "User not found." };
 
-  if (result.rowsAffected === 0) return { ok: false, message: "User not found." };
+  await db.users.update({
+    where: { username },
+    data: { password_hash: hashPassword(password) },
+  });
 
   await recordAudit({
     actor,
@@ -115,9 +118,9 @@ export async function setUserActiveAction(formData: FormData): Promise<void> {
   if (username === actor.username) return;
 
   const db = await getDb();
-  await db.execute({
-    sql: "UPDATE users SET is_active = ? WHERE username = ?",
-    args: [active, username],
+  await db.users.update({
+    where: { username },
+    data: { is_active: active },
   });
 
   await recordAudit({
@@ -129,3 +132,48 @@ export async function setUserActiveAction(formData: FormData): Promise<void> {
 
   revalidatePath("/settings");
 }
+
+export async function updatePermissionsMatrixAction(formData: FormData): Promise<ActionState> {
+  try {
+    const actor = await assertPermission("settings.manage");
+    const db = await getDb();
+
+    // Clear and update permissions based on submitted form
+    const entries = Array.from(formData.entries());
+
+    for (const [key, val] of entries) {
+      if (key.startsWith("perm_")) {
+        // e.g. perm_PC_plots.create = "1"
+        const [, role, ...permParts] = key.split("_");
+        const perm = permParts.join("_");
+        const allowed = val === "1";
+
+        await db.role_permissions.upsert({
+          where: {
+            role_permission: { role, permission: perm },
+          },
+          update: { allowed: allowed ? 1 : 0 },
+          create: { role, permission: perm, allowed: allowed ? 1 : 0 },
+        });
+      }
+    }
+
+    await recordAudit({
+      actor,
+      action: "permissions.updated",
+      entity: "role_permissions",
+      entityRef: "matrix",
+    });
+
+    revalidatePath("/settings");
+    revalidatePath("/dashboard");
+    revalidatePath("/plots");
+    revalidatePath("/members");
+    revalidatePath("/customers");
+
+    return { ok: true, message: "Role permission matrix updated successfully!" };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : "Failed to update permissions." };
+  }
+}
+

@@ -14,13 +14,13 @@ export default async function LoginPage({
     <main className="flex min-h-dvh items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">
-            CM
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[#0066cc] text-base font-bold text-white shadow-md">
+            3%
           </div>
-          <h1 className="mt-4 text-xl font-semibold tracking-tight text-ink">
-            Customer &amp; Member Management
+          <h1 className="mt-4 text-xl font-semibold tracking-tight-apple text-[#1d1d1f]">
+            3% Real Estate
           </h1>
-          <p className="mt-1 text-sm text-ink-muted">
+          <p className="mt-1 text-xs text-[#7a7a7a]">
             Sign in to the office management console.
           </p>
         </div>

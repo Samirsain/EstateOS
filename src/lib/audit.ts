@@ -21,18 +21,16 @@ export async function recordAudit({
   details,
 }: AuditEntry): Promise<void> {
   const db = await getDb();
-  await db.execute({
-    sql: `INSERT INTO audit_logs (actor_id, actor_name, actor_role, action, entity, entity_ref, details)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      actor?.id ?? null,
-      actor?.name ?? "system",
-      actor?.role ?? "SYSTEM",
+  await db.audit_logs.create({
+    data: {
+      actor_id: actor?.id ?? null,
+      actor_name: actor?.name ?? "system",
+      actor_role: actor?.role ?? "SYSTEM",
       action,
       entity,
-      entityRef,
-      details ? JSON.stringify(details) : null,
-    ],
+      entity_ref: entityRef,
+      details: details ? JSON.stringify(details) : null,
+    },
   });
 }
 
@@ -45,16 +43,15 @@ export async function recordDuplicateAttempt(params: {
   actor: SessionUser | null;
 }): Promise<void> {
   const db = await getDb();
-  await db.execute({
-    sql: `INSERT INTO duplicate_attempts (field, entity, masked_value, existing_code, attempted_name, attempted_by)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [
-      params.field,
-      params.entity,
-      params.maskedValue,
-      params.existingCode,
-      params.attemptedName,
-      params.actor?.id ?? null,
-    ],
+  await db.duplicate_attempts.create({
+    data: {
+      field: params.field,
+      entity: params.entity,
+      masked_value: params.maskedValue,
+      existing_code: params.existingCode,
+      attempted_name: params.attemptedName,
+      attempted_by: params.actor?.id ?? null,
+    },
   });
 }
+

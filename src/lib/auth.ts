@@ -3,26 +3,108 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sessionCookieName, verifySession } from "./session";
 import type { Role, SessionUser } from "./types";
+import { getDb, ensureDbSetup } from "./db";
 
-/**
- * Capability model. The MD has full access; the PC runs the office but
- * cannot manage user accounts.
- */
-export const PERMISSIONS = {
-  "dashboard.view": ["MD", "PC"],
-  "members.view": ["MD", "PC"],
-  "members.create": ["MD", "PC"],
-  "members.edit": ["MD", "PC"],
-  "members.delete": ["MD"],
-  "customers.view": ["MD", "PC"],
-  "customers.delete": ["MD"],
-  "settings.manage": ["MD"],
-} as const satisfies Record<string, readonly Role[]>;
+export interface PermissionDefinition {
+  key: string;
+  label: string;
+  category: string;
+}
 
-export type Permission = keyof typeof PERMISSIONS;
+export const ALL_PERMISSIONS: PermissionDefinition[] = [
+  { key: "dashboard.view", label: "View Dashboard & Analytics", category: "Dashboard" },
+  { key: "plots.view", label: "View Plots Inventory", category: "Plots Inventory" },
+  { key: "plots.create", label: "Create & Edit Plots", category: "Plots Inventory" },
+  { key: "plots.delete", label: "Delete Plots from Inventory", category: "Plots Inventory" },
+  { key: "projects.create", label: "Create Real Estate Projects", category: "Plots Inventory" },
+  { key: "projects.delete", label: "Delete Real Estate Projects", category: "Plots Inventory" },
+  { key: "plots.allot", label: "Allot / Book Plots to Customers", category: "Plots Inventory" },
+  { key: "members.view", label: "View Members List", category: "Members" },
+  { key: "members.create", label: "Create & Edit Members", category: "Members" },
+  { key: "customers.view", label: "View Customers List", category: "Customers" },
+  { key: "customers.create", label: "Register New Customers", category: "Customers" },
+  { key: "customers.transfer", label: "Transfer Customer Referrals", category: "Customers" },
+  { key: "settings.manage", label: "Manage System Settings & Permissions", category: "Settings" },
+];
 
-export function can(role: Role, permission: Permission): boolean {
-  return (PERMISSIONS[permission] as readonly Role[]).includes(role);
+export type Permission = (typeof ALL_PERMISSIONS)[number]["key"];
+
+import { cache } from "react";
+
+/** Cached role permissions set per request */
+export const getRolePermissions = cache(async (role: Role): Promise<Set<string>> => {
+  if (role === "MD") {
+    return new Set(ALL_PERMISSIONS.map((p) => p.key));
+  }
+  try {
+    const db = await getDb();
+    const rows = await db.role_permissions.findMany({
+      where: { role, allowed: 1 },
+      select: { permission: true },
+    });
+    return new Set(rows.map((r) => r.permission));
+  } catch {
+    // Default fallback for PC if DB unreachable
+    return new Set(
+      ALL_PERMISSIONS.filter(
+        (p) => !["settings.manage", "customers.transfer", "projects.create", "projects.delete", "plots.delete"].includes(p.key)
+      ).map((p) => p.key)
+    );
+  }
+});
+
+/** Checks dynamic permission in the DB role_permissions table. */
+export async function can(role: Role, permission: string): Promise<boolean> {
+  if (role === "MD") return true;
+  const allowedSet = await getRolePermissions(role);
+  return allowedSet.has(permission);
+}
+
+/** Fetches full permission matrix for MD & PC for the settings checkbox UI. */
+export async function getRolePermissionsMatrix(): Promise<{
+  permission: string;
+  label: string;
+  category: string;
+  mdAllowed: boolean;
+  pcAllowed: boolean;
+}[]> {
+  const db = await getDb();
+  let rows: { role: string; permission: string; allowed: number }[] = [];
+  try {
+    rows = await db.role_permissions.findMany();
+  } catch {
+    rows = [];
+  }
+
+  const permMap: Record<string, { MD: boolean; PC: boolean }> = {};
+
+  for (const row of rows) {
+    const role = String(row.role);
+    const perm = String(row.permission);
+    const allowed = Number(row.allowed) === 1;
+    if (!permMap[perm]) permMap[perm] = { MD: true, PC: true };
+    if (role === "MD" || role === "PC") permMap[perm][role] = allowed;
+  }
+
+  return ALL_PERMISSIONS.map((item) => ({
+    permission: item.key,
+    label: item.label,
+    category: item.category,
+    mdAllowed: permMap[item.key]?.MD ?? true,
+    pcAllowed: permMap[item.key]?.PC ?? (item.key !== "settings.manage" && item.key !== "customers.transfer"),
+  }));
+}
+
+/** Toggle a permission for a role in the DB. */
+export async function toggleRolePermission(role: Role, permission: string, allowed: boolean): Promise<void> {
+  const db = await getDb();
+  await db.role_permissions.upsert({
+    where: {
+      role_permission: { role, permission },
+    },
+    update: { allowed: allowed ? 1 : 0 },
+    create: { role, permission, allowed: allowed ? 1 : 0 },
+  });
 }
 
 /** Returns the signed-in user, or null when there is no valid session. */
@@ -38,27 +120,26 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-/**
- * Guards a page or server action behind a capability. Middleware already blocks
- * the obvious routes, but every privileged entry point re-checks here so that a
- * direct POST to a server action cannot bypass the rule.
- */
+/** Guards a page or server action behind a capability. */
 export async function requirePermission(
-  permission: Permission,
+  permission: string,
 ): Promise<SessionUser> {
   const user = await requireUser();
-  if (!can(user.role, permission)) redirect("/dashboard?denied=" + permission);
+  const allowed = await can(user.role, permission);
+  if (!allowed) redirect("/dashboard?denied=" + permission);
   return user;
 }
 
 /** Throws instead of redirecting — for use inside server actions. */
 export async function assertPermission(
-  permission: Permission,
+  permission: string,
 ): Promise<SessionUser> {
   const user = await getSession();
   if (!user) throw new Error("Not authenticated");
-  if (!can(user.role, permission)) {
+  const allowed = await can(user.role, permission);
+  if (!allowed) {
     throw new Error(`Role ${user.role} is not permitted to ${permission}`);
   }
   return user;
 }
+

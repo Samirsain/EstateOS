@@ -13,18 +13,13 @@ export async function deleteCustomerAction(formData: FormData): Promise<void> {
   const code = requireText(formData.get("customerCode"), { max: 40 });
   const db = await getDb();
 
-  const customerResult = await db.execute({
-    sql: "SELECT id, name FROM customers WHERE customer_code = ?",
-    args: [code],
+  const customer = await db.customers.findUnique({
+    where: { customer_code: code },
   });
-  const customer = customerResult.rows[0] as unknown as
-    | { id: number; name: string }
-    | undefined;
   if (!customer) return;
 
-  await db.execute({
-    sql: "DELETE FROM customers WHERE id = ?",
-    args: [customer.id],
+  await db.customers.delete({
+    where: { id: customer.id },
   });
 
   await recordAudit({
@@ -38,3 +33,4 @@ export async function deleteCustomerAction(formData: FormData): Promise<void> {
   revalidatePath("/customers");
   redirect("/customers");
 }
+

@@ -24,24 +24,28 @@ function StatCard({
   tone?: "default" | "alert";
 }) {
   const body = (
-    <>
-      <p className="text-sm font-medium text-ink-muted">{label}</p>
-      <p
-        className={`mt-2 text-3xl font-semibold ${
-          tone === "alert" && value > 0 ? "text-danger" : "text-ink"
-        }`}
-      >
-        {value.toLocaleString("en-IN")}
-      </p>
-      {hint ? <p className="mt-1 text-xs text-ink-muted">{hint}</p> : null}
-    </>
+    <div className="flex flex-col justify-between h-full">
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#7a7a7a] truncate">{label}</span>
+      </div>
+      <div className="mt-1 flex items-baseline justify-between gap-2">
+        <span
+          className={`text-xl font-semibold tracking-tight-apple ${
+            tone === "alert" && value > 0 ? "text-rose-600" : "text-[#1d1d1f]"
+          }`}
+        >
+          {value.toLocaleString("en-IN")}
+        </span>
+        {hint ? <span className="text-[10px] text-[#7a7a7a] truncate font-normal">{hint}</span> : null}
+      </div>
+    </div>
   );
 
   const className =
-    "block rounded-xl border border-line bg-surface p-5 shadow-sm transition";
+    "block rounded-[14px] border border-[#e0e0e0] bg-white px-3.5 py-2.5 transition-all hover:border-[#0066cc]/40 hover:shadow-xs active:scale-[0.98]";
 
   return href ? (
-    <Link href={href} className={`${className} hover:border-brand-500`}>
+    <Link href={href} className={className}>
       {body}
     </Link>
   ) : (
@@ -72,7 +76,7 @@ export default async function DashboardPage({
       />
 
       {denied ? (
-        <div className="mb-5">
+        <div className="mb-4">
           <Alert tone="warning" title="That area is restricted">
             Your role ({user.role}) does not have access to that page. Settings
             is Managing Director only.
@@ -80,13 +84,25 @@ export default async function DashboardPage({
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total customers"
           value={stats.totalCustomers}
           href="/customers"
         />
         <StatCard label="Total members" value={stats.totalMembers} href="/members" />
+        <StatCard
+          label="Total Plots"
+          value={stats.totalPlots}
+          hint={`${stats.availablePlots} Avail • ${stats.holdPlots} Hold`}
+          href="/plots"
+        />
+        <StatCard
+          label="Allotted Plots"
+          value={stats.allottedPlots}
+          hint={`${stats.allottedPlots} allotted`}
+          href="/plots"
+        />
         <StatCard
           label="Investors"
           value={stats.investors}
@@ -96,10 +112,10 @@ export default async function DashboardPage({
         <StatCard
           label="Today's registrations"
           value={stats.todayCustomers}
-          hint={`${stats.todayMembers} member${stats.todayMembers === 1 ? "" : "s"} registered today`}
+          hint={`${stats.todayMembers} members today`}
         />
         <StatCard
-          label="Duplicate attempts blocked"
+          label="Duplicate attempts"
           value={stats.duplicateAttempts}
           hint={`${stats.duplicateAttemptsToday} today`}
           tone="alert"
