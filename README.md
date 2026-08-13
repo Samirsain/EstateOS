@@ -83,13 +83,6 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 👤 Default Admin Credentials
-
-| Role | Username | Password |
-|---|---|---|
-| **Managing Director (MD)** | `md` | `ChangeMe@123` |
-
----
 
 ## 🌐 Vercel Deployment
 
