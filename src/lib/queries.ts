@@ -262,6 +262,15 @@ export async function getGrowthSeries(days = 30): Promise<GrowthPoint[]> {
   startDate.setDate(startDate.getDate() - (days - 1));
   startDate.setHours(0, 0, 0, 0);
 
+  // Build the empty series map first
+  const series: Record<string, { customers: number; members: number }> = {};
+  for (let i = 0; i < days; i++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    series[d.toISOString().slice(0, 10)] = { customers: 0, members: 0 };
+  }
+
+  // Fetch only created_at timestamps (minimal payload)
   const [customers, members] = await Promise.all([
     db.customers.findMany({
       where: { created_at: { gte: startDate } },
@@ -273,23 +282,13 @@ export async function getGrowthSeries(days = 30): Promise<GrowthPoint[]> {
     }),
   ]);
 
-  const series: Record<string, { customers: number; members: number }> = {};
-
-  for (let i = 0; i < days; i++) {
-    const d = new Date(startDate);
-    d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().slice(0, 10);
-    series[dateStr] = { customers: 0, members: 0 };
-  }
-
   for (const c of customers) {
-    const dateStr = c.created_at.toISOString().slice(0, 10);
-    if (series[dateStr]) series[dateStr].customers++;
+    const key = c.created_at.toISOString().slice(0, 10);
+    if (series[key]) series[key].customers++;
   }
-
   for (const m of members) {
-    const dateStr = m.created_at.toISOString().slice(0, 10);
-    if (series[dateStr]) series[dateStr].members++;
+    const key = m.created_at.toISOString().slice(0, 10);
+    if (series[key]) series[key].members++;
   }
 
   return Object.entries(series).map(([day, val]) => ({
@@ -310,24 +309,36 @@ export interface TopMember {
 export async function getTopMembers(limit = 8): Promise<TopMember[]> {
   const db = await getDb();
   const members = await db.members.findMany({
-    include: {
-      customers: true,
+    where: {
+      customers: { some: {} },
     },
+    select: {
+      member_code: true,
+      name: true,
+      city: true,
+      _count: {
+        select: {
+          customers: true,
+        },
+      },
+      customers: {
+        where: { customer_type: "Investor" },
+        select: { id: true },
+      },
+    },
+    orderBy: {
+      customers: { _count: "desc" },
+    },
+    take: limit,
   });
 
-  const list: TopMember[] = members
-    .map((m) => ({
-      member_code: m.member_code,
-      name: m.name,
-      city: m.city,
-      customers: m.customers.length,
-      investors: m.customers.filter((c) => c.customer_type === "Investor").length,
-    }))
-    .filter((m) => m.customers > 0)
-    .sort((a, b) => b.customers - a.customers)
-    .slice(0, limit);
-
-  return list;
+  return members.map((m) => ({
+    member_code: m.member_code,
+    name: m.name,
+    city: m.city,
+    customers: m._count.customers,
+    investors: m.customers.length,
+  }));
 }
 
 export async function listProjects(): Promise<import("./types").ProjectRow[]> {

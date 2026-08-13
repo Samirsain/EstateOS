@@ -21,6 +21,7 @@ export function SidebarNav({ items }: { items: NavItem[] }) {
           <Link
             key={item.href}
             href={item.href}
+            prefetch={true}
             aria-current={active ? "page" : undefined}
             className={`flex items-center justify-between gap-2 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
               active
