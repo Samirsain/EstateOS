@@ -104,6 +104,10 @@ Deploy seamlessly to [Vercel](https://vercel.com/):
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ for <strong>3% Real Estate</strong></sub>
-</div>
+## 👨‍💻 Developer & Credits
+
+Designed & Built with ❤️ by **[Samir Sain](https://www.samirsain.com)**
+
+- 🌐 Website: [https://www.samirsain.com](https://www.samirsain.com)
+- 🏢 Built for: **3% Real Estate Management**
+

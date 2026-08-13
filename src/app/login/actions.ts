@@ -6,7 +6,7 @@ import { recordAudit } from "@/lib/audit";
 import { verifyPassword } from "@/lib/crypto";
 import { getDb } from "@/lib/db";
 import { sessionCookieName, sessionMaxAge, signSession } from "@/lib/session";
-import type { ActionState, SessionUser, UserRow } from "@/lib/types";
+import type { ActionState, Role, SessionUser, UserRow } from "@/lib/types";
 
 export async function loginAction(
   _prev: ActionState,
@@ -16,23 +16,22 @@ export async function loginAction(
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/dashboard");
 
-  if (!username || !password) {
-    return { ok: false, message: "Enter both username and password." };
-  }
-
-  const db = await getDb();
-  const row = await db.users.findUnique({
-    where: { username },
-  });
-
-  /*
-   * A single generic message for unknown user, wrong password and disabled
-   * account, so the form cannot be used to enumerate valid usernames.
-   */
   const invalid: ActionState = {
     ok: false,
     message: "Invalid username or password.",
   };
+
+  if (!username || !password) return invalid;
+
+  const db = await getDb();
+  let row: UserRow | null = null;
+  try {
+    row = (await db.users.findUnique({
+      where: { username },
+    })) as unknown as UserRow | null;
+  } catch {
+    row = null;
+  }
 
   if (!row || !row.is_active) return invalid;
   if (!verifyPassword(password, row.password_hash)) {
@@ -49,7 +48,7 @@ export async function loginAction(
     id: row.id,
     username: row.username,
     name: row.name,
-    role: row.role,
+    role: row.role as Role,
   };
 
   const store = await cookies();

@@ -56,11 +56,6 @@ export function CreateProjectModal({ open, onClose }: { open: boolean; onClose: 
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Initial Total Plots</label>
-          <Input name="total_plots" type="number" defaultValue="10" />
-        </div>
-
-        <div>
           <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Project Status</label>
           <Select name="status" defaultValue="Active">
             <option value="Active">Active</option>
