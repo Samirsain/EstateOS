@@ -223,6 +223,26 @@ Operational access for day-to-day workflows.
 | **Deployment** | Vercel |
 
 ---
+# Creator
+
+<div align="center">
+
+## Samir Sain
+
+**Full-Stack Developer · SaaS Builder · Product Designer**
+
+EstateOS is independently designed and developed by **Samir Sain**.
+
+I build modern web applications, SaaS platforms, management systems,
+and digital products focused on performance, usability, and scalable architecture.
+
+<br />
+
+[Website](https://www.samirsain.com)
+·
+[GitHub](https://github.com/Samirsain)
+
+</div>
 
 # Architecture
 
@@ -250,3 +270,5 @@ Operational access for day-to-day workflows.
                  ┌─────────────────────┐
                  │ Supabase PostgreSQL │
                  └─────────────────────┘
+
+
