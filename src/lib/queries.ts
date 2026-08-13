@@ -333,10 +333,16 @@ export async function getTopMembers(limit = 8): Promise<TopMember[]> {
 export async function listProjects(): Promise<import("./types").ProjectRow[]> {
   const db = await getDb();
   const projects = await db.projects.findMany({
+    include: {
+      _count: {
+        select: { plots: true },
+      },
+    },
     orderBy: { id: "desc" },
   });
   return projects.map((p) => ({
     ...p,
+    total_plots: p._count.plots,
     created_at: p.created_at.toISOString(),
   })) as unknown as import("./types").ProjectRow[];
 }
