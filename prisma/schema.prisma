@@ -187,6 +187,8 @@ model plots {
   project_id    Int
   plot_number   String
   block         String?
+  width_ft      Float?    // frontage; area is derived from width x length when both are set
+  length_ft     Float?    // depth
   size_sqft     Float
   rate_per_sqft Float
   total_price   Float
@@ -201,6 +203,11 @@ model plots {
   project       projects  @relation(fields: [project_id], references: [id])
   creator       users?    @relation("PlotCreatedBy", fields: [created_by], references: [id])
   allotment     plot_allotments?
+
+  // Two seeders once inserted the same plot list twice and Sales History showed
+  // the duplicates as separate sales. A plot number is unique within its
+  // project, so the database enforces that now.
+  @@unique([project_id, plot_number])
 }
 
 model plot_allotments {

@@ -2,6 +2,12 @@
 
 import * as React from "react";
 import { Badge, Button, Card, CustomSelect, Table, Td, Th } from "@/components/ui";
+import {
+  areaBreakdown,
+  formatMoneyShort,
+  formatNumber,
+  ratePerSqft,
+} from "@/lib/measure";
 import type { PlotAllotmentWithDetails, PlotWithDetails, ProjectRow } from "@/lib/types";
 import { CreatePlotModal, CreateProjectModal, AllotPlotModal } from "./plot-modals";
 import { updatePlotStatusAction, deletePlotAction, deleteProjectAction, cancelAllotmentAction } from "./actions";
@@ -193,6 +199,8 @@ function PlotDetailDrawer({
 }) {
   const isSold = plot.status === "Sold" || plot.status === "Allotted";
   const isHold = plot.status === "Hold";
+  const area = areaBreakdown(plot);
+  const rate = ratePerSqft(plot.total_price, area.sqft);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -259,21 +267,53 @@ function PlotDetailDrawer({
         {/* Body */}
         <div className="flex-1 px-5 py-4 space-y-4">
 
-          {/* Plot Specs */}
+          {/* Measurements — dimensions first, then every unit derived from them */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#a1a1a6] mb-2">Plot Details</p>
+            <div className="flex items-baseline justify-between mb-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#a1a1a6]">Measurement</p>
+              {area.dimensions ? (
+                <span className="rounded-full bg-[#0066cc] px-2 py-0.5 text-[10px] font-bold text-white">
+                  {area.dimensions}
+                </span>
+              ) : null}
+            </div>
+            <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 border border-[#e9ecef]">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Sq. Feet</p>
+                  <p className="text-sm font-bold text-[#1d1d1f] mt-0.5 tabular">{formatNumber(area.sqft, 0)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Sq. Yard</p>
+                  <p className="text-sm font-bold text-[#1d1d1f] mt-0.5 tabular">{formatNumber(area.gaj)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Sq. Meter</p>
+                  <p className="text-sm font-bold text-[#1d1d1f] mt-0.5 tabular">{formatNumber(area.sqm)}</p>
+                </div>
+              </div>
+              {area.sqft >= 43560 ? (
+                <p className="mt-2 border-t border-[#e9ecef] pt-2 text-[11px] text-[#7a7a7a]">
+                  = <strong className="text-[#1d1d1f]">{formatNumber(area.acre, 3)} acre</strong>
+                  {" · "}
+                  <strong className="text-[#1d1d1f]">{formatNumber(area.bigha, 3)} bigha</strong>
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Pricing & classification */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#a1a1a6] mb-2">Pricing</p>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 border border-[#e9ecef]">
-                <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Size</p>
-                <p className="text-sm font-bold text-[#1d1d1f] mt-0.5">{plot.size_sqft.toLocaleString("en-IN")} sq.ft</p>
+                <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Total Price</p>
+                <p className="text-sm font-bold text-[#1d1d1f] mt-0.5">₹{formatNumber(plot.total_price, 0)}</p>
               </div>
               <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 border border-[#e9ecef]">
                 <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Rate</p>
-                <p className="text-sm font-bold text-[#1d1d1f] mt-0.5">₹{plot.rate_per_sqft.toLocaleString("en-IN")}/sqft</p>
-              </div>
-              <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 border border-[#e9ecef]">
-                <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Total Price</p>
-                <p className="text-sm font-bold text-[#1d1d1f] mt-0.5">₹{plot.total_price.toLocaleString("en-IN")}</p>
+                <p className="text-sm font-bold text-[#1d1d1f] mt-0.5">₹{formatNumber(rate, 0)}/sq.ft</p>
+                <p className="text-[10px] text-[#7a7a7a]">₹{formatNumber(rate * 9, 0)}/gaj</p>
               </div>
               <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 border border-[#e9ecef]">
                 <p className="text-[9px] font-semibold uppercase text-[#7a7a7a] tracking-wider">Category</p>
@@ -453,11 +493,13 @@ export function PlotsManager({
       if (plotSort === "price_desc") {
         return b.total_price - a.total_price;
       }
+      /* Sort on the derived area so a plot with dimensions sorts by what the
+         UI actually shows, not by a stale stored size. */
       if (plotSort === "size_asc") {
-        return a.size_sqft - b.size_sqft;
+        return areaBreakdown(a).sqft - areaBreakdown(b).sqft;
       }
       if (plotSort === "size_desc") {
-        return b.size_sqft - a.size_sqft;
+        return areaBreakdown(b).sqft - areaBreakdown(a).sqft;
       }
       if (plotSort === "status_asc") {
         return a.status.localeCompare(b.status);
@@ -900,7 +942,9 @@ export function PlotsManager({
                               <span className={`text-[11px] font-bold leading-tight ${
                                 isSold ? "text-rose-800" : isHold ? "text-amber-800" : "text-[#1d1d1f]"
                               }`}>{plot.plot_number}</span>
-                              <span className="text-[9px] text-[#7a7a7a] mt-0.5 leading-none">{plot.size_sqft} sf</span>
+                              <span className="text-[9px] text-[#7a7a7a] mt-0.5 leading-none">
+                                {areaBreakdown(plot).dimensions ?? `${formatNumber(plot.size_sqft, 0)} sf`}
+                              </span>
                               {isSold && <span className="mt-1 rounded bg-rose-600 px-1 py-0.5 text-[7px] font-extrabold text-white tracking-wider">SOLD</span>}
                               {isHold && <span className="mt-1 rounded bg-amber-500 px-1 py-0.5 text-[7px] font-extrabold text-white tracking-wider">HOLD</span>}
                               {!isSold && !isHold && canAllotPlot && (
@@ -931,6 +975,7 @@ export function PlotsManager({
                     {pagePlots.map(plot => {
                       const isSold = plot.status === "Sold" || plot.status === "Allotted";
                       const isHold = plot.status === "Hold";
+                      const area = areaBreakdown(plot);
                       const typeColor =
                         (plot.plot_type || "Residential") === "Commercial" ? "bg-purple-400"
                         : (plot.plot_type || "Residential") === "Agriculture" ? "bg-emerald-400"
@@ -960,13 +1005,19 @@ export function PlotsManager({
                           {/* Project name */}
                           <p className="mt-0.5 text-[9px] text-[#7a7a7a] leading-tight truncate">{plot.project_name}</p>
 
-                          {/* Size */}
-                          <p className="mt-1 text-[10px] font-medium text-[#3a3a3c]">{plot.size_sqft.toLocaleString("en-IN")} sf</p>
+                          {/* Measurement — dimensions when known, then area */}
+                          <p className="mt-1 text-[10px] font-semibold text-[#1d1d1f] leading-tight">
+                            {area.dimensions ?? `${formatNumber(area.sqft, 0)} sq.ft`}
+                          </p>
+                          <p className="text-[9px] text-[#7a7a7a] leading-tight">
+                            {area.dimensions ? `${formatNumber(area.sqft, 0)} sq.ft · ` : ""}
+                            {formatNumber(area.gaj)} gaj
+                          </p>
 
                           {/* Price */}
                           <p className={`text-[10px] font-semibold mt-0.5 ${
                             isSold ? "text-rose-700" : "text-[#1d1d1f]"
-                          }`}>₹{(plot.total_price / 100000).toFixed(1)}L</p>
+                          }`}>{formatMoneyShort(plot.total_price)}</p>
 
                           {/* Status indicator */}
                           {isSold ? (
@@ -1088,7 +1139,8 @@ export function PlotsManager({
                 <Th>Facing</Th>
                 <Th>Category</Th>
                 <Th>Project Name</Th>
-                <Th>Size (Sq.Ft)</Th>
+                <Th>Dimensions</Th>
+                <Th>Area</Th>
                 <Th>Status</Th>
                 <Th>Assigned Customer / Member</Th>
                 <Th className="text-right">Actions</Th>
@@ -1097,6 +1149,7 @@ export function PlotsManager({
             <tbody>
               {filteredPlots.map((plot) => {
                 const isOccupied = plot.status === "Allotted" || plot.status === "Sold";
+                const plotArea = areaBreakdown(plot);
                 return (
                   <tr key={plot.id} className={isOccupied ? "bg-rose-50/70 hover:bg-rose-100/60 transition-colors border-b border-rose-100" : ""}>
                     <Td className={isOccupied ? "font-extrabold text-rose-950 flex items-center gap-1.5" : "font-bold text-ink"}>
@@ -1122,7 +1175,21 @@ export function PlotsManager({
                       </span>
                     </Td>
                     <Td>{plot.project_name}</Td>
-                    <Td>{plot.size_sqft} sq.ft</Td>
+                    <Td className="whitespace-nowrap">
+                      {plotArea.dimensions ? (
+                        <span className="font-semibold text-[#1d1d1f]">{plotArea.dimensions}</span>
+                      ) : (
+                        <span className="text-[#a1a1a6]">—</span>
+                      )}
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      <p className="font-semibold text-[#1d1d1f] tabular">
+                        {formatNumber(plotArea.sqft, 0)} sq.ft
+                      </p>
+                      <p className="text-[11px] text-[#7a7a7a] tabular">
+                        {formatNumber(plotArea.gaj)} gaj · {formatNumber(plotArea.sqm)} sq.m
+                      </p>
+                    </Td>
                     <Td>{getStatusBadge(plot.status)}</Td>
                     <Td>
                       {plot.status === "Sold" && plot.customer_name && plot.customer_name.trim() ? (

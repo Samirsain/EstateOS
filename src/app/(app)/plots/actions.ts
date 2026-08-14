@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import { assertPermission } from "@/lib/auth";
 import { checkBlacklist } from "@/lib/blacklist";
+import { ratePerSqft as ratePerSqftFrom, sqftFromDimensions } from "@/lib/measure";
 import { recalcRoyaltyStatus } from "@/lib/referrals";
 import { getDb } from "@/lib/db";
 import { nextAllotmentCode, nextCustomerCode, nextPlotCode, nextProjectCode } from "@/lib/ids";
@@ -71,6 +72,8 @@ export async function createPlotAction(
     const projectIdStr = String(formData.get("project_id") ?? "").trim();
     const plotNumber = String(formData.get("plot_number") ?? "").trim().toUpperCase();
     const block = String(formData.get("block") ?? "").trim().toUpperCase();
+    const widthStr = String(formData.get("width_ft") ?? "").trim();
+    const lengthStr = String(formData.get("length_ft") ?? "").trim();
     const sizeSqftStr = String(formData.get("size_sqft") ?? "0").trim();
     const totalPriceStr = String(formData.get("total_price") ?? "0").trim();
     const ratePerSqftStr = String(formData.get("rate_per_sqft") ?? "0").trim();
@@ -78,10 +81,21 @@ export async function createPlotAction(
     const plotType = String(formData.get("plot_type") ?? "Residential").trim();
     const notes = String(formData.get("notes") ?? "").trim().toUpperCase();
 
+    const widthFt = Number(widthStr) || 0;
+    const lengthFt = Number(lengthStr) || 0;
+
+    /* Width x length is the source of truth when both are given; the typed
+       area is only a fallback for irregular parcels measured on paper. */
+    const derivedSqft = sqftFromDimensions(widthFt, lengthFt);
+    const sizeSqft = derivedSqft ?? (Number(sizeSqftStr) || 0);
+
     const errors: Record<string, string> = {};
     if (!projectIdStr) errors.project_id = "Please select a project.";
     if (!plotNumber) errors.plot_number = "Plot number is required.";
-    if (!sizeSqftStr || Number(sizeSqftStr) <= 0) errors.size_sqft = "Valid size in sq.ft is required.";
+    if (sizeSqft <= 0)
+      errors.size_sqft = "Enter width and length, or a total area in sq.ft.";
+    if (widthStr && widthFt <= 0) errors.width_ft = "Width must be greater than zero.";
+    if (lengthStr && lengthFt <= 0) errors.length_ft = "Length must be greater than zero.";
     if (!totalPriceStr && !ratePerSqftStr) errors.total_price = "Total plot price is required.";
 
     if (Object.keys(errors).length > 0) {
@@ -89,17 +103,31 @@ export async function createPlotAction(
     }
 
     const projectId = Number(projectIdStr);
-    const sizeSqft = Number(sizeSqftStr);
     let totalPrice = Number(totalPriceStr) || 0;
     let ratePerSqft = Number(ratePerSqftStr) || 0;
 
-    if (totalPrice > 0 && ratePerSqft === 0 && sizeSqft > 0) {
-      ratePerSqft = Math.round(totalPrice / sizeSqft);
-    } else if (ratePerSqft > 0 && totalPrice === 0 && sizeSqft > 0) {
+    if (totalPrice > 0 && ratePerSqft === 0) {
+      ratePerSqft = Math.round(ratePerSqftFrom(totalPrice, sizeSqft));
+    } else if (ratePerSqft > 0 && totalPrice === 0) {
       totalPrice = sizeSqft * ratePerSqft;
     }
 
     const db = await getDb();
+
+    const clash = await db.plots.findUnique({
+      where: {
+        project_id_plot_number: { project_id: projectId, plot_number: plotNumber },
+      },
+      select: { plot_code: true },
+    });
+    if (clash) {
+      return {
+        ok: false,
+        message: `Plot ${plotNumber} already exists in this project as ${clash.plot_code}.`,
+        errors: { plot_number: "Already used in this project." },
+      };
+    }
+
     const plotCode = await nextPlotCode();
 
     await db.plots.create({
@@ -108,6 +136,8 @@ export async function createPlotAction(
         project_id: projectId,
         plot_number: plotNumber,
         block: block || null,
+        width_ft: widthFt || null,
+        length_ft: lengthFt || null,
         size_sqft: sizeSqft,
         rate_per_sqft: ratePerSqft,
         total_price: totalPrice,

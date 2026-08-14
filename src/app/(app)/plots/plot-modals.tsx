@@ -3,6 +3,12 @@
 import * as React from "react";
 import { useFormStatus } from "react-dom";
 import { Button, Input, Modal, Select } from "@/components/ui";
+import {
+  areaBreakdown,
+  formatNumber,
+  ratePerSqft,
+  sqftFromDimensions,
+} from "@/lib/measure";
 import { createPlotAction, createProjectAction, allotPlotAction } from "./actions";
 import type { PlotWithDetails, ProjectRow } from "@/lib/types";
 
@@ -12,6 +18,158 @@ function SubmitBtn({ label }: { label: string }) {
     <Button type="submit" disabled={pending}>
       {pending ? "Processing..." : label}
     </Button>
+  );
+}
+
+/**
+ * Width x length in feet is what a plot is actually marked out as on site, so
+ * that is what the operator types. Every other figure — square feet, square
+ * metres, gaj, acre and the rate per sq.ft — is derived live from it and from
+ * the price, which removes the chance of a typed area disagreeing with the
+ * dimensions on the same record.
+ */
+function PlotAreaFields({
+  errors,
+  price,
+  onPriceChange,
+}: {
+  errors?: Record<string, string>;
+  price: string;
+  onPriceChange: (value: string) => void;
+}) {
+  const [width, setWidth] = React.useState("");
+  const [length, setLength] = React.useState("");
+  const [manualSqft, setManualSqft] = React.useState("");
+
+  const derived = sqftFromDimensions(Number(width), Number(length));
+  const sqft = derived ?? (Number(manualSqft) || 0);
+  const area = sqft > 0 ? areaBreakdown({ size_sqft: sqft }) : null;
+  const rate = ratePerSqft(Number(price) || 0, sqft);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div>
+          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">
+            Width (ft)
+          </label>
+          <Input
+            name="width_ft"
+            type="number"
+            step="any"
+            min="0"
+            placeholder="30"
+            value={width}
+            onChange={(e) => setWidth(e.target.value)}
+          />
+          {errors?.width_ft && <p className="text-xs text-rose-600 mt-1">{errors.width_ft}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">
+            Length (ft)
+          </label>
+          <Input
+            name="length_ft"
+            type="number"
+            step="any"
+            min="0"
+            placeholder="40"
+            value={length}
+            onChange={(e) => setLength(e.target.value)}
+          />
+          {errors?.length_ft && <p className="text-xs text-rose-600 mt-1">{errors.length_ft}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">
+            Area (sq.ft){derived ? "" : " *"}
+          </label>
+          <Input
+            name="size_sqft"
+            type="number"
+            step="any"
+            min="0"
+            placeholder="1200"
+            value={derived ? String(Math.round(derived * 100) / 100) : manualSqft}
+            onChange={(e) => setManualSqft(e.target.value)}
+            readOnly={derived !== null}
+            className={derived !== null ? "bg-[#f5f5f7] text-[#7a7a7a]" : ""}
+          />
+          {errors?.size_sqft && <p className="text-xs text-rose-600 mt-1">{errors.size_sqft}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">
+            Total Price (₹) *
+          </label>
+          <Input
+            name="total_price"
+            type="number"
+            step="any"
+            min="0"
+            placeholder="1800000"
+            value={price}
+            onChange={(e) => onPriceChange(e.target.value)}
+            required
+          />
+          {errors?.total_price && <p className="text-xs text-rose-600 mt-1">{errors.total_price}</p>}
+        </div>
+      </div>
+
+      {area ? (
+        <div className="rounded-xl border border-[#e0e0e0] bg-[#fafafc] px-3.5 py-2.5">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#a1a1a6]">
+              Calculated measurements
+            </p>
+            {derived ? (
+              <span className="text-[10px] font-semibold text-[#0066cc]">
+                {formatNumber(Number(width))} × {formatNumber(Number(length))} ft
+              </span>
+            ) : (
+              <span className="text-[10px] text-[#a1a1a6]">Area entered manually</span>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-x-4 gap-y-1">
+            <Measure label="Sq. Feet" value={formatNumber(area.sqft, 0)} />
+            <Measure label="Sq. Yard (Gaj)" value={formatNumber(area.gaj)} />
+            <Measure label="Sq. Meter" value={formatNumber(area.sqm)} />
+          </div>
+          {/* Five-digit square footage is unreadable for farmland, so large
+              parcels also get the unit they are actually traded in. */}
+          {area.sqft >= 43560 ? (
+            <p className="mt-1.5 text-[11px] text-[#7a7a7a]">
+              = <strong className="text-[#1d1d1f]">{formatNumber(area.acre, 3)} acre</strong>
+              {" · "}
+              <strong className="text-[#1d1d1f]">{formatNumber(area.bigha, 3)} bigha</strong>
+            </p>
+          ) : null}
+          {rate > 0 ? (
+            <p className="mt-2 border-t border-[#f0f0f0] pt-2 text-[11px] text-[#3a3a3c]">
+              Rate:{" "}
+              <strong className="text-[#1d1d1f]">
+                ₹{formatNumber(rate, 0)}/sq.ft
+              </strong>{" "}
+              <span className="text-[#7a7a7a]">
+                · ₹{formatNumber(rate * 9, 0)}/gaj
+              </span>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Measure({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[9px] font-semibold uppercase tracking-wider text-[#a1a1a6]">
+        {label}
+      </p>
+      <p className="text-xs font-bold text-[#1d1d1f] tabular">{value}</p>
+    </div>
   );
 }
 
@@ -90,6 +248,7 @@ export function CreatePlotModal({
   projects: ProjectRow[];
 }) {
   const [feedback, setFeedback] = React.useState<{ ok?: boolean; message?: string; errors?: Record<string, string> } | null>(null);
+  const [price, setPrice] = React.useState("");
 
   async function handleSubmit(formData: FormData) {
     setFeedback(null);
@@ -134,29 +293,11 @@ export function CreatePlotModal({
           {feedback?.errors?.plot_number && <p className="text-xs text-rose-600 mt-1">{feedback.errors.plot_number}</p>}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Plot Area (Sq. Ft) *</label>
-            <Input
-              name="size_sqft"
-              type="number"
-              placeholder="e.g. 1200"
-              required
-            />
-            {feedback?.errors?.size_sqft && <p className="text-xs text-rose-600 mt-1">{feedback.errors.size_sqft}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Total Plot Price (₹) *</label>
-            <Input
-              name="total_price"
-              type="number"
-              placeholder="e.g. 1800000"
-              required
-            />
-            {feedback?.errors?.total_price && <p className="text-xs text-rose-600 mt-1">{feedback.errors.total_price}</p>}
-          </div>
-        </div>
+        <PlotAreaFields
+          errors={feedback?.errors}
+          price={price}
+          onPriceChange={setPrice}
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <div>

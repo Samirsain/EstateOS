@@ -123,6 +123,10 @@ export interface PlotRow {
   project_id: number;
   plot_number: string;
   block: string | null;
+  /** Frontage in feet; area is derived from width x length when both are set. */
+  width_ft: number | null;
+  /** Depth in feet. */
+  length_ft: number | null;
   size_sqft: number;
   rate_per_sqft: number;
   total_price: number;

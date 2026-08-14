@@ -27,6 +27,42 @@ async function main() {
 
   console.log("Checking business rules (all writes rolled back)...\n");
 
+  // ── Measurement conversions (pure, no database) ───────────────────────────
+  try {
+    const { areaBreakdown, sqftFromDimensions, ratePerSqft } = await import(
+      "../src/lib/measure"
+    );
+
+    const plot = { width_ft: 30, length_ft: 40, size_sqft: 999 };
+    const area = areaBreakdown(plot);
+
+    // Dimensions win over a stale stored size.
+    assert.equal(area.sqft, 1200, "30 x 40 must be 1200 sq.ft, not the stored 999");
+    assert.equal(area.derived, true, "area must be flagged as derived");
+    assert.equal(area.dimensions, "30 × 40 ft");
+
+    // 1 sq.yd = 9 sq.ft exactly.
+    assert.equal(Math.round(area.gaj * 1000) / 1000, 133.333);
+    // 1 ft = 0.3048 m, so 1200 sq.ft = 111.4836 sq.m.
+    assert.equal(Math.round(area.sqm * 10000) / 10000, 111.4836);
+    // 1 acre = 43,560 sq.ft.
+    assert.equal(areaBreakdown({ size_sqft: 43560 }).acre, 1);
+
+    // Without both dimensions the stored area is used unchanged.
+    const irregular = areaBreakdown({ width_ft: 30, length_ft: null, size_sqft: 999 });
+    assert.equal(irregular.sqft, 999, "a missing dimension must fall back to size_sqft");
+    assert.equal(irregular.derived, false);
+    assert.equal(irregular.dimensions, null);
+
+    assert.equal(sqftFromDimensions(0, 40), null, "zero width is not a dimension");
+    assert.equal(ratePerSqft(1800000, 0), 0, "rate must not divide by zero");
+    assert.equal(ratePerSqft(1800000, 1200), 1500);
+
+    pass("measurement conversions (sq.ft / sq.yd / sq.m from W x L)");
+  } catch (err) {
+    fail("measurement conversions (sq.ft / sq.yd / sq.m from W x L)", err);
+  }
+
   try {
     await prisma.$transaction(
       async (tx) => {
