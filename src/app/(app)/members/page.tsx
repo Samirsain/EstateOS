@@ -14,32 +14,60 @@ import {
 import { SearchBar } from "@/components/search-bar";
 import { requirePermission } from "@/lib/auth";
 import { listMembers } from "@/lib/queries";
+import type { MemberListItem } from "@/lib/queries";
+import { SortSelect } from "./sort-select";
 
 export const metadata: Metadata = { title: "Members" };
+
+type SortKey = "name" | "city" | "customers_desc" | "members_desc" | "date_desc";
+
+function sortMembers(members: MemberListItem[], sort: SortKey): MemberListItem[] {
+  return [...members].sort((a, b) => {
+    switch (sort) {
+      case "name":
+        return a.name.localeCompare(b.name);
+      case "city":
+        return (a.city ?? "").localeCompare(b.city ?? "");
+      case "customers_desc":
+        return b.customer_count - a.customer_count;
+      case "members_desc":
+        return (b.referred_members_count ?? 0) - (a.referred_members_count ?? 0);
+      case "date_desc":
+      default:
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+  });
+}
+
+
 
 export default async function MembersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; sort?: string }>;
 }) {
   await requirePermission("members.view");
-  const { q = "" } = await searchParams;
-  const members = await listMembers(q);
+  const { q = "", sort = "date_desc" } = await searchParams;
+  const rawMembers = await listMembers(q);
+  const members = sortMembers(rawMembers, sort as SortKey);
 
   return (
     <>
       <PageHeader
         title="Members"
-        description="Offline referral partners. Each member owns the customers they refer."
+        description="Referral members list. Each member owns the customers they refer."
         action={<LinkButton href="/members/new" variant="primary">Register member</LinkButton>}
       />
 
       <Card>
-        <div className="border-b border-line px-5 py-4 no-print">
-          <SearchBar
-            placeholder="Search by name, mobile, Member ID, invite code, city…"
-            defaultValue={q}
-          />
+        <div className="border-b border-line px-5 py-4 no-print flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex-1">
+            <SearchBar
+              placeholder="Search by name, mobile, Member ID, city…"
+              defaultValue={q}
+            />
+          </div>
+          <SortSelect q={q} sort={sort} />
         </div>
 
         {members.length === 0 ? (
@@ -48,7 +76,7 @@ export default async function MembersPage({
             description={
               q
                 ? "Try a different name, mobile number or Member ID."
-                : "Register the first referral partner to start assigning customers."
+                : "Register the first member to start assigning customers."
             }
             action={
               q ? null : (
@@ -66,8 +94,8 @@ export default async function MembersPage({
                 <Th>Name</Th>
                 <Th>Mobile</Th>
                 <Th>City</Th>
-                <Th>Invite code</Th>
-                <Th className="text-right">Customers</Th>
+                <Th className="text-right">Referred Members</Th>
+                <Th className="text-right">Referred Customers</Th>
                 <Th>Registered</Th>
               </tr>
             </thead>
@@ -90,17 +118,13 @@ export default async function MembersPage({
                       </span>
                     )}
                     {member.company_name ? (
-                      <p className="text-xs text-ink-muted">
-                        {member.company_name}
-                      </p>
+                      <p className="text-xs text-ink-muted">{member.company_name}</p>
                     ) : null}
                   </Td>
                   <Td className="tabular">{member.mobile}</Td>
                   <Td>{member.city ?? "—"}</Td>
-                  <Td>
-                    <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold tracking-wider">
-                      {member.invite_code}
-                    </code>
+                  <Td className="tabular text-right font-medium">
+                    {member.referred_members_count ?? 0}
                   </Td>
                   <Td className="tabular text-right font-medium">
                     {member.customer_count}

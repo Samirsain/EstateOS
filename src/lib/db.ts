@@ -18,11 +18,6 @@ export function getDb() {
   return prisma;
 }
 
-export async function ensureDbSetup(): Promise<void> {
-  return Promise.resolve();
-}
-
-export type SqlExecutor = any;
 export default prisma;
 
 

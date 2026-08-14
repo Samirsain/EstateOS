@@ -7,7 +7,7 @@ import { getDashboardStats, getGrowthSeries, getTopMembers } from "@/lib/queries
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-/* SQLite reads are cheap but the numbers must never be stale. */
+/* The counts are batched into a single $transaction, and must never be stale. */
 export const dynamic = "force-dynamic";
 
 function StatCard({
@@ -98,9 +98,9 @@ export default async function DashboardPage({
           href="/plots"
         />
         <StatCard
-          label="Allotted Plots"
+          label="Sold Plots"
           value={stats.allottedPlots}
-          hint={`${stats.allottedPlots} allotted`}
+          hint={`${stats.allottedPlots} sold`}
           href="/plots"
         />
         <StatCard

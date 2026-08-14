@@ -30,7 +30,7 @@ export default async function CustomersPage({
     <>
       <PageHeader
         title="Customers"
-        description="Every customer is permanently owned by the member who referred them."
+        description="Every customer is permanently associated with the member who referred them."
       />
 
       <Card>
@@ -74,7 +74,7 @@ export default async function CustomersPage({
                 <Th>Name</Th>
                 <Th>Mobile</Th>
                 <Th>Type</Th>
-                <Th>Owned by</Th>
+                <Th>Sold by</Th>
                 <Th>Registered</Th>
               </tr>
             </thead>

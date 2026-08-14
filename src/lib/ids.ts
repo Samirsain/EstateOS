@@ -1,4 +1,12 @@
+import type { Prisma } from "@prisma/client";
 import { getDb } from "./db";
+
+/**
+ * Either an interactive transaction client or the shared client. Sequence
+ * reservation must be able to join a caller's transaction so a rolled-back
+ * insert does not leave a gap in the code series.
+ */
+export type SequenceClient = Prisma.TransactionClient | null;
 
 export const CUSTOMER_PREFIX = "TM";
 export const MEMBER_PREFIX = "3C";
@@ -17,11 +25,11 @@ const PROJECT_DIGITS = 3;
  * `<prefix><seq>` zero-padded to `digits`.
  */
 export async function nextCode(
-  tx: any,
+  tx: SequenceClient,
   prefix: string,
   digits: number,
 ): Promise<string> {
-  const db = tx || (await getDb());
+  const db = tx ?? getDb();
 
   const result = await db.id_sequences.upsert({
     where: { prefix },
@@ -33,23 +41,23 @@ export async function nextCode(
   return `${prefix}${String(seq).padStart(digits, "0")}`;
 }
 
-export function nextCustomerCode(tx: any = null): Promise<string> {
+export function nextCustomerCode(tx: SequenceClient = null): Promise<string> {
   return nextCode(tx, CUSTOMER_PREFIX, CUSTOMER_DIGITS);
 }
 
-export function nextMemberCode(tx: any = null): Promise<string> {
+export function nextMemberCode(tx: SequenceClient = null): Promise<string> {
   return nextCode(tx, MEMBER_PREFIX, MEMBER_DIGITS);
 }
 
-export function nextPlotCode(tx: any = null): Promise<string> {
+export function nextPlotCode(tx: SequenceClient = null): Promise<string> {
   return nextCode(tx, PLOT_PREFIX, PLOT_DIGITS);
 }
 
-export function nextAllotmentCode(tx: any = null): Promise<string> {
+export function nextAllotmentCode(tx: SequenceClient = null): Promise<string> {
   return nextCode(tx, ALLOTMENT_PREFIX, ALLOTMENT_DIGITS);
 }
 
-export function nextProjectCode(tx: any = null): Promise<string> {
+export function nextProjectCode(tx: SequenceClient = null): Promise<string> {
   return nextCode(tx, PROJECT_PREFIX, PROJECT_DIGITS);
 }
 

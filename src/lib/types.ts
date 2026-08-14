@@ -36,11 +36,17 @@ export interface MemberRow {
   company_name: string | null;
   deals_in: string;
   experience: string | null;
+  rera_no: string | null;
+  email: string | null;
+  referred_by_member_id: number | null;
   aadhaar_encrypted: string;
   aadhaar_index: string;
   aadhaar_last4: string;
   invite_code: string;
   is_active: number;
+  is_commission_eligible?: boolean;
+  royalty_unlocked?: boolean;
+  is_blacklisted?: boolean;
   created_at: string;
   created_by: number | null;
 }
@@ -55,14 +61,31 @@ export interface CustomerRow {
   aadhaar_index: string;
   aadhaar_last4: string;
   member_id: number;
+  referred_by_customer_id?: number | null;
   invite_code: string;
+  is_blacklisted?: boolean;
+  promoted_to_member_id?: number | null;
   created_at: string;
   created_by: number | null;
 }
 
 export interface CustomerWithMember extends CustomerRow {
-  member_name: string;
-  member_code: string;
+  member_name: string | null;
+  member_code: string | null;
+  referred_by_customer_name?: string | null;
+  referred_by_customer_code?: string | null;
+  referred_customers?: Array<{
+    id: number;
+    customer_code: string;
+    name: string;
+    mobile: string;
+    created_at: string;
+  }>;
+  project_name?: string | null;
+  plot_number?: string | null;
+  plot_block?: string | null;
+  plot_size?: number | null;
+  plot_price?: number | null;
 }
 
 export interface SessionUser {
@@ -72,14 +95,14 @@ export interface SessionUser {
   role: Role;
 }
 
-export type PlotStatus = "Available" | "Hold" | "Booked" | "Allotted";
-export const PLOT_STATUS_OPTIONS: PlotStatus[] = ["Available", "Hold", "Booked", "Allotted"];
+export type PlotStatus = "Available" | "Hold" | "Booked" | "Allotted" | "Sold";
+export const PLOT_STATUS_OPTIONS: PlotStatus[] = ["Available", "Hold", "Booked", "Allotted", "Sold"];
 
-export type PlotType = "Residential" | "Commercial" | "Agriculture";
-export const PLOT_TYPE_OPTIONS: PlotType[] = ["Residential", "Commercial", "Agriculture"];
+export type PlotType = "Residential" | "Commercial" | "Informal" | "Agriculture";
+export const PLOT_TYPE_OPTIONS: PlotType[] = ["Residential", "Commercial", "Informal", "Agriculture"];
 
-export type PlotFacing = "East" | "West" | "North" | "South" | "Corner";
-export const PLOT_FACING_OPTIONS: PlotFacing[] = ["East", "West", "North", "South", "Corner"];
+export type PlotFacing = "East" | "West" | "North" | "South" | "2-Side Open" | "3-Side Open";
+export const PLOT_FACING_OPTIONS: PlotFacing[] = ["East", "West", "North", "South", "2-Side Open", "3-Side Open"];
 
 export interface ProjectRow {
   id: number;

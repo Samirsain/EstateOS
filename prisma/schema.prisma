@@ -27,55 +27,69 @@ model users {
   created_projects     projects[]           @relation("ProjectCreatedBy")
   created_plots        plots[]              @relation("PlotCreatedBy")
   created_allotments   plot_allotments[]    @relation("AllotmentCreatedBy")
+  blacklists_done      blacklist_registry[] @relation("BlacklistedBy")
   created_users        users[]              @relation("UserCreatedBy")
   creator              users?               @relation("UserCreatedBy", fields: [created_by], references: [id])
 }
 
 model members {
-  id                Int       @id @default(autoincrement())
-  member_code       String    @unique
-  name              String
-  mobile            String    @unique
-  alternate_mobile  String?
-  city              String?
-  company_name      String?
-  deals_in          String    @default("[]")
-  experience        String?
-  aadhaar_encrypted String
-  aadhaar_index     String    @unique
-  aadhaar_last4     String
-  invite_code       String    @unique
-  is_active         Int       @default(1)
-  created_at        DateTime  @default(now())
-  created_by        Int?
+  id                    Int       @id @default(autoincrement())
+  member_code           String    @unique
+  name                  String
+  mobile                String    @unique
+  alternate_mobile      String?
+  city                  String?
+  company_name          String?
+  deals_in              String    @default("[]")
+  experience            String?
+  rera_no               String?
+  email                 String?
+  aadhaar_encrypted     String
+  aadhaar_index         String    @unique
+  aadhaar_last4         String
+  invite_code           String    @unique
+  is_active             Int       @default(1)
+  is_commission_eligible Boolean  @default(false)
+  royalty_unlocked      Boolean   @default(false)
+  is_blacklisted        Boolean   @default(false)
+  created_at            DateTime  @default(now())
+  created_by            Int?
+  referred_by_member_id Int?
 
   // Relations
-  creator           users?    @relation("MemberCreatedBy", fields: [created_by], references: [id])
-  customers         customers[]
-  transfers_from    transfers[] @relation("TransferFromMember")
-  transfers_to      transfers[] @relation("TransferToMember")
-  allotments        plot_allotments[]
+  creator               users?    @relation("MemberCreatedBy", fields: [created_by], references: [id])
+  referred_by           members?  @relation("MemberReferrals", fields: [referred_by_member_id], references: [id], onDelete: SetNull)
+  referred_members      members[] @relation("MemberReferrals")
+  customers             customers[]
+  transfers_from        transfers[] @relation("TransferFromMember")
+  transfers_to          transfers[] @relation("TransferToMember")
+  allotments            plot_allotments[]
 }
 
 model customers {
-  id                Int       @id @default(autoincrement())
-  customer_code     String    @unique
-  name              String
-  mobile            String    @unique
-  customer_type     String    // 'User', 'Investor'
-  aadhaar_encrypted String
-  aadhaar_index     String    @unique
-  aadhaar_last4     String
-  member_id         Int?
-  invite_code       String?
-  created_at        DateTime  @default(now())
-  created_by        Int?
+  id                     Int       @id @default(autoincrement())
+  customer_code          String    @unique
+  name                   String
+  mobile                 String    @unique
+  customer_type          String    // 'User', 'Investor'
+  aadhaar_encrypted      String
+  aadhaar_index          String    @unique
+  aadhaar_last4          String
+  member_id              Int?
+  referred_by_customer_id Int?
+  invite_code            String?
+  is_blacklisted         Boolean   @default(false)
+  promoted_to_member_id  Int?
+  created_at             DateTime  @default(now())
+  created_by             Int?
 
   // Relations
-  member            members?  @relation(fields: [member_id], references: [id])
-  creator           users?    @relation("CustomerCreatedBy", fields: [created_by], references: [id])
-  transfers         transfers[]
-  allotments        plot_allotments[]
+  member                 members?   @relation(fields: [member_id], references: [id])
+  referred_by_customer   customers? @relation("CustomerReferrals", fields: [referred_by_customer_id], references: [id], onDelete: SetNull)
+  referred_customers     customers[] @relation("CustomerReferrals")
+  creator                users?     @relation("CustomerCreatedBy", fields: [created_by], references: [id])
+  transfers              transfers[]
+  allotments             plot_allotments[]
 }
 
 model transfers {
@@ -121,6 +135,28 @@ model audit_logs {
 
   // Relations
   actor      users?    @relation("AuditLogBy", fields: [actor_id], references: [id])
+}
+
+model blacklist_registry {
+  id             Int      @id @default(autoincrement())
+  entity_type    String   // 'CUSTOMER' or 'MEMBER'
+  entity_id      Int
+  entity_code    String
+  name           String
+  name_normalised String? // lowercase, whitespace-collapsed — fuzzy name+city factor
+  mobile         String
+  aadhaar_last4  String?
+  aadhaar_index  String?  // blind index: exact Aadhaar match without storing the number
+  city           String?
+  reason         String
+  blacklisted_by Int?
+  created_at     DateTime @default(now())
+
+  blacklister    users?   @relation("BlacklistedBy", fields: [blacklisted_by], references: [id])
+
+  @@index([mobile])
+  @@index([aadhaar_index])
+  @@index([name_normalised])
 }
 
 model id_sequences {

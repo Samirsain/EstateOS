@@ -33,7 +33,7 @@
 | **Language** | [TypeScript](https://www.typescriptlang.org/) |
 | **Database & ORM** | [Supabase PostgreSQL](https://supabase.com/) + [Prisma ORM](https://www.prisma.io/) |
 | **Styling & UI** | [Tailwind CSS v4](https://tailwindcss.com/) + Custom Apple Design Tokens |
-| **Animations** | [Framer Motion](https://www.framer.com/motion/) |
+| **Charts** | Hand-rolled inline SVG — no charting dependency |
 | **Auth & Security** | JWT (HS256) `httpOnly` Session + Node Crypto (scrypt / AES-256-GCM) |
 
 ---
@@ -64,8 +64,14 @@ Create a `.env` file in the root directory (or copy `.env.example`):
 ```env
 DATABASE_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true"
 DIRECT_URL="postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres"
-APP_SECRET="c8e7943fa109825b42d1396a8f7b5e3c1d90a42e56f71893c0d24e18b9561234"
+APP_SECRET="<32-byte hex string — generate your own, never reuse a published one>"
 ```
+
+> **`APP_SECRET` is mandatory in production.** It derives the session signing key,
+> the Aadhaar field-encryption key and the blind-index key. The server refuses to
+> start handling requests without it rather than falling back to a known default.
+> Generate one with `openssl rand -hex 32`. Changing it invalidates all existing
+> sessions and makes previously encrypted Aadhaar values unreadable.
 
 ### 4. Database Setup & Seeding
 Push the Prisma schema to Supabase PostgreSQL and seed default roles & admin credentials:

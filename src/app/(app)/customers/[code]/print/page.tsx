@@ -8,7 +8,14 @@ import { getCustomerByCode } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Customer registration form" };
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+}: {
+  label: string;
+  /* Nullable by design — the fallback below already renders an em dash. */
+  value: string | null | undefined;
+}) {
   return (
     <div className="flex gap-4 border-b border-dashed border-line py-2 text-sm">
       <span className="w-48 shrink-0 font-medium text-ink-muted">{label}</span>

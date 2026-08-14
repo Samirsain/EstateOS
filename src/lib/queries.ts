@@ -1,8 +1,13 @@
+import type { Prisma } from "@prisma/client";
 import { getDb } from "./db";
 import type { CustomerRow, CustomerWithMember, MemberRow, UserRow } from "./types";
 
 export interface MemberListItem extends MemberRow {
   customer_count: number;
+  referred_members_count?: number;
+  referred_by_name?: string | null;
+  referred_by_code?: string | null;
+  referred_members?: Array<{ id: number; member_code: string; name: string; mobile: string; is_commission_eligible?: boolean; created_at: string }>;
 }
 
 export async function listMembers(search = ""): Promise<MemberListItem[]> {
@@ -28,9 +33,24 @@ export async function listMembers(search = ""): Promise<MemberListItem[]> {
     orderBy: { id: "desc" },
   });
 
+  /* One grouped query for every member's referral count, instead of a COUNT
+     per row — the list page was firing N+1 queries against Supabase. */
+  const referralCounts = await db.members.groupBy({
+    by: ["referred_by_member_id"],
+    where: { referred_by_member_id: { not: null } },
+    _count: { _all: true },
+  });
+
+  const referralCountByParent = new Map<number, number>(
+    referralCounts
+      .filter((row) => row.referred_by_member_id !== null)
+      .map((row) => [row.referred_by_member_id as number, row._count._all]),
+  );
+
   return members.map((m) => ({
     ...m,
     customer_count: m._count.customers,
+    referred_members_count: referralCountByParent.get(m.id) ?? 0,
     created_at: m.created_at.toISOString(),
   })) as unknown as MemberListItem[];
 }
@@ -48,9 +68,41 @@ export async function getMemberByCode(
 
   if (!m) return undefined;
 
+  const [parentMember, childMembers] = await Promise.all([
+    m.referred_by_member_id
+      ? db.members.findUnique({
+          where: { id: m.referred_by_member_id },
+          select: { name: true, member_code: true },
+        })
+      : null,
+    db.members.findMany({
+      where: { referred_by_member_id: m.id },
+      select: {
+        id: true,
+        member_code: true,
+        name: true,
+        mobile: true,
+        is_commission_eligible: true,
+        created_at: true,
+      },
+      /* Same ordering the commission slots are assigned by, so the badges in
+         the UI line up with recalcCommissionEligibility. */
+      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    }),
+  ]);
+
+  const referred_by_name = parentMember?.name ?? null;
+  const referred_by_code = parentMember?.member_code ?? null;
+
   return {
     ...m,
     customer_count: m._count.customers,
+    referred_by_name,
+    referred_by_code,
+    referred_members: childMembers.map((rm) => ({
+      ...rm,
+      created_at: rm.created_at.toISOString(),
+    })),
     created_at: m.created_at.toISOString(),
   } as unknown as MemberListItem;
 }
@@ -103,7 +155,7 @@ export async function listCustomers(
   const exactLast4 = search.replace(/\D/g, "").slice(-4);
   const db = await getDb();
 
-  const whereConditions: any[] = [];
+  const whereConditions: Prisma.customersWhereInput[] = [];
 
   if (search) {
     whereConditions.push({
@@ -139,16 +191,35 @@ export async function listCustomers(
 
   const customers = await db.customers.findMany({
     where: whereConditions.length ? { AND: whereConditions } : undefined,
-    include: { member: true },
+    include: {
+      member: true,
+      allotments: {
+        include: {
+          plot: {
+            include: {
+              project: true,
+            },
+          },
+        },
+      },
+    },
     orderBy: { id: "desc" },
   });
 
-  return customers.map((c) => ({
-    ...c,
-    member_name: c.member?.name ?? null,
-    member_code: c.member?.member_code ?? null,
-    created_at: c.created_at.toISOString(),
-  })) as unknown as CustomerWithMember[];
+  return customers.map((c) => {
+    const firstAllotment = c.allotments?.[0];
+    return {
+      ...c,
+      member_name: c.member?.name ?? null,
+      member_code: c.member?.member_code ?? null,
+      project_name: firstAllotment?.plot?.project?.name ?? null,
+      plot_number: firstAllotment?.plot?.plot_number ?? null,
+      plot_block: firstAllotment?.plot?.block ?? null,
+      plot_size: firstAllotment?.plot?.size_sqft ?? null,
+      plot_price: firstAllotment?.agreed_price ?? firstAllotment?.plot?.total_price ?? null,
+      created_at: c.created_at.toISOString(),
+    };
+  }) as unknown as CustomerWithMember[];
 }
 
 export async function getCustomerByCode(
@@ -162,10 +233,38 @@ export async function getCustomerByCode(
 
   if (!c) return undefined;
 
+  const [rawRef, parentCust] = await Promise.all([
+    db.customers.findMany({
+      where: { referred_by_customer_id: c.id },
+      select: {
+        id: true,
+        customer_code: true,
+        name: true,
+        mobile: true,
+        created_at: true,
+      },
+      orderBy: { id: "desc" },
+    }),
+    c.referred_by_customer_id
+      ? db.customers.findUnique({
+          where: { id: c.referred_by_customer_id },
+          select: { name: true, customer_code: true },
+        })
+      : null,
+  ]);
+
+  const referredCustomers = rawRef.map((rc) => ({
+    ...rc,
+    created_at: rc.created_at.toISOString(),
+  }));
+
   return {
     ...c,
     member_name: c.member?.name ?? null,
     member_code: c.member?.member_code ?? null,
+    referred_by_customer_name: parentCust?.name ?? null,
+    referred_by_customer_code: parentCust?.customer_code ?? null,
+    referred_customers: referredCustomers,
     created_at: c.created_at.toISOString(),
   } as unknown as CustomerWithMember;
 }
@@ -229,7 +328,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     db.plots.count(),
     db.plots.count({ where: { status: "Available" } }),
     db.plots.count({ where: { status: "Hold" } }),
-    db.plots.count({ where: { status: { in: ["Booked", "Allotted"] } } }),
+    db.plots.count({ where: { status: { in: ["Booked", "Allotted", "Sold"] } } }),
     db.plots.aggregate({ _sum: { total_price: true } }),
   ]);
 
@@ -351,9 +450,9 @@ export async function listProjects(): Promise<import("./types").ProjectRow[]> {
     },
     orderBy: { id: "desc" },
   });
-  return projects.map((p) => ({
+  return projects.map(({ _count, ...p }) => ({
     ...p,
-    total_plots: p._count.plots,
+    total_plots: _count.plots,
     created_at: p.created_at.toISOString(),
   })) as unknown as import("./types").ProjectRow[];
 }
@@ -369,7 +468,7 @@ export async function listPlots(filters: PlotFilters = {}): Promise<import("./ty
   const db = await getDb();
   const search = (filters.search ?? "").trim();
 
-  const whereConditions: any[] = [];
+  const whereConditions: Prisma.plotsWhereInput[] = [];
 
   if (search) {
     whereConditions.push({
@@ -408,17 +507,21 @@ export async function listPlots(filters: PlotFilters = {}): Promise<import("./ty
     orderBy: { id: "desc" },
   });
 
-  return plots.map((p) => ({
+  /* The nested relations are flattened away rather than spread through: this
+     list is handed to a client component, and shipping the full `project` and
+     `allotment` objects sent every buyer's Aadhaar ciphertext to the browser
+     and forced a JSON round-trip to strip the Date instances. */
+  return plots.map(({ project, allotment, ...p }) => ({
     ...p,
-    project_name: p.project.name,
-    project_location: p.project.location,
-    allotment_code: p.allotment?.allotment_code ?? null,
-    booking_amount: p.allotment?.booking_amount ?? null,
-    payment_status: p.allotment?.payment_status ?? null,
-    customer_name: p.allotment?.customer.name ?? null,
-    customer_code: p.allotment?.customer.customer_code ?? null,
-    member_name: p.allotment?.member?.name ?? null,
-    member_code: p.allotment?.member?.member_code ?? null,
+    project_name: project.name,
+    project_location: project.location,
+    allotment_code: allotment?.allotment_code ?? null,
+    booking_amount: allotment?.booking_amount ?? null,
+    payment_status: allotment?.payment_status ?? null,
+    customer_name: allotment?.customer.name ?? null,
+    customer_code: allotment?.customer.customer_code ?? null,
+    member_name: allotment?.member?.name ?? null,
+    member_code: allotment?.member?.member_code ?? null,
     created_at: p.created_at.toISOString(),
   })) as unknown as import("./types").PlotWithDetails[];
 }
@@ -468,16 +571,16 @@ export async function listPlotAllotments(): Promise<import("./types").PlotAllotm
     orderBy: { id: "desc" },
   });
 
-  return allotments.map((pa) => ({
+  return allotments.map(({ plot, customer, member, ...pa }) => ({
     ...pa,
-    plot_number: pa.plot.plot_number,
-    plot_code: pa.plot.plot_code,
-    project_name: pa.plot.project.name,
-    customer_name: pa.customer.name,
-    customer_code: pa.customer.customer_code,
-    customer_mobile: pa.customer.mobile,
-    member_name: pa.member?.name ?? null,
-    member_code: pa.member?.member_code ?? null,
+    plot_number: plot.plot_number,
+    plot_code: plot.plot_code,
+    project_name: plot.project.name,
+    customer_name: customer.name,
+    customer_code: customer.customer_code,
+    customer_mobile: customer.mobile,
+    member_name: member?.name ?? null,
+    member_code: member?.member_code ?? null,
     allotment_date: pa.allotment_date.toISOString(),
     created_at: pa.created_at.toISOString(),
   })) as unknown as import("./types").PlotAllotmentWithDetails[];

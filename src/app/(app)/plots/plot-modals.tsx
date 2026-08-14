@@ -55,23 +55,9 @@ export function CreateProjectModal({ open, onClose }: { open: boolean; onClose: 
           {feedback?.errors?.location && <p className="text-xs text-rose-600 mt-1">{feedback.errors.location}</p>}
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Project Status</label>
-          <Select name="status" defaultValue="Active">
-            <option value="Active">Active</option>
-            <option value="Upcoming">Upcoming</option>
-            <option value="Completed">Completed</option>
-          </Select>
-        </div>
 
-        <div>
-          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Project Category / Type</label>
-          <Select name="project_type" defaultValue="Residential">
-            <option value="Residential">Residential Township</option>
-            <option value="Commercial">Commercial Project</option>
-            <option value="Agriculture">Agricultural / Farmland</option>
-          </Select>
-        </div>
+
+
 
         <div>
           <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Description / Amenities</label>
@@ -104,10 +90,6 @@ export function CreatePlotModal({
   projects: ProjectRow[];
 }) {
   const [feedback, setFeedback] = React.useState<{ ok?: boolean; message?: string; errors?: Record<string, string> } | null>(null);
-  const [sizeSqft, setSizeSqft] = React.useState<number>(1200);
-  const [ratePerSqft, setRatePerSqft] = React.useState<number>(1500);
-
-  const calculatedTotal = (sizeSqft || 0) * (ratePerSqft || 0);
 
   async function handleSubmit(formData: FormData) {
     setFeedback(null);
@@ -146,17 +128,10 @@ export function CreatePlotModal({
           {feedback?.errors?.project_id && <p className="text-xs text-rose-600 mt-1">{feedback.errors.project_id}</p>}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Plot Number *</label>
-            <Input name="plot_number" placeholder="e.g. A-101" required />
-            {feedback?.errors?.plot_number && <p className="text-xs text-rose-600 mt-1">{feedback.errors.plot_number}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Block / Sector</label>
-            <Input name="block" placeholder="e.g. Block A" />
-          </div>
+        <div>
+          <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Plot Number *</label>
+          <Input name="plot_number" placeholder="e.g. A-101" required />
+          {feedback?.errors?.plot_number && <p className="text-xs text-rose-600 mt-1">{feedback.errors.plot_number}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -165,27 +140,22 @@ export function CreatePlotModal({
             <Input
               name="size_sqft"
               type="number"
-              value={sizeSqft}
-              onChange={(e) => setSizeSqft(Number(e.target.value))}
+              placeholder="e.g. 1200"
               required
             />
+            {feedback?.errors?.size_sqft && <p className="text-xs text-rose-600 mt-1">{feedback.errors.size_sqft}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Rate per Sq. Ft (₹) *</label>
+            <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Total Plot Price (₹) *</label>
             <Input
-              name="rate_per_sqft"
+              name="total_price"
               type="number"
-              value={ratePerSqft}
-              onChange={(e) => setRatePerSqft(Number(e.target.value))}
+              placeholder="e.g. 1800000"
               required
             />
+            {feedback?.errors?.total_price && <p className="text-xs text-rose-600 mt-1">{feedback.errors.total_price}</p>}
           </div>
-        </div>
-
-        <div className="rounded-lg bg-brand-50 p-3 border border-brand-200">
-          <p className="text-xs text-brand-700 font-medium">Auto-Calculated Total Price:</p>
-          <p className="text-xl font-bold text-brand-900">₹{calculatedTotal.toLocaleString("en-IN")}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -196,16 +166,22 @@ export function CreatePlotModal({
               <option value="West">West Facing</option>
               <option value="North">North Facing</option>
               <option value="South">South Facing</option>
-              <option value="Corner">Corner Plot</option>
+              <option value="North-East (NE)">North-East (NE) Facing</option>
+              <option value="North-West (NW)">North-West (NW) Facing</option>
+              <option value="South-East (SE)">South-East (SE) Facing</option>
+              <option value="South-West (SW)">South-West (SW) Facing</option>
+              <option value="2-Side Open">2-Side Open</option>
+              <option value="3-Side Open">3-Side Open</option>
             </Select>
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Plot Type / Category</label>
             <Select name="plot_type" defaultValue="Residential">
-              <option value="Residential">Residential Plot</option>
-              <option value="Commercial">Commercial Plot</option>
-              <option value="Agriculture">Agricultural / Farmland</option>
+              <option value="Residential">Residential</option>
+              <option value="Commercial">Commercial</option>
+              <option value="Informal">Informal</option>
+              <option value="Agriculture">Agriculture</option>
             </Select>
           </div>
         </div>
@@ -230,17 +206,58 @@ export function AllotPlotModal({
   open,
   onClose,
   plots,
+  customers = [],
+  members = [],
   preselectedPlot,
 }: {
   open: boolean;
   onClose: () => void;
   plots: PlotWithDetails[];
-  customers?: unknown;
-  members?: unknown;
+  customers?: { id: number; customer_code: string; name: string; mobile?: string }[];
+  members?: { id: number; member_code: string; name: string }[];
   preselectedPlot?: PlotWithDetails | null;
 }) {
   const [feedback, setFeedback] = React.useState<{ ok?: boolean; message?: string; errors?: Record<string, string> } | null>(null);
   const [selectedPlotId, setSelectedPlotId] = React.useState<number>(preselectedPlot?.id || plots[0]?.id || 0);
+  const [buyerMode, setBuyerMode] = React.useState<"new" | "existing">("new");
+  const [referralType, setReferralType] = React.useState<"none" | "member" | "customer">("none");
+
+  const [buyerCodeInput, setBuyerCodeInput] = React.useState("");
+  const [memberCodeInput, setMemberCodeInput] = React.useState("");
+  const [customerCodeInput, setCustomerCodeInput] = React.useState("");
+
+  /* Memoised so the fallback empty array is not a fresh reference on every
+     render, which would re-run all three lookups below each keystroke. */
+  const customersList = React.useMemo(
+    () => (Array.isArray(customers) ? customers : []),
+    [customers],
+  );
+  const membersList = React.useMemo(
+    () => (Array.isArray(members) ? members : []),
+    [members],
+  );
+
+  const matchedBuyer = React.useMemo(() => {
+    const query = buyerCodeInput.trim().toUpperCase();
+    if (!query) return null;
+    return customersList.find(
+      (c) =>
+        c.customer_code.toUpperCase() === query ||
+        (c.mobile && c.mobile.includes(query))
+    );
+  }, [buyerCodeInput, customersList]);
+
+  const matchedMember = React.useMemo(() => {
+    const code = memberCodeInput.trim().toUpperCase();
+    if (!code) return null;
+    return membersList.find((m) => m.member_code.toUpperCase() === code);
+  }, [memberCodeInput, membersList]);
+
+  const matchedCustomer = React.useMemo(() => {
+    const code = customerCodeInput.trim().toUpperCase();
+    if (!code) return null;
+    return customersList.find((c) => c.customer_code.toUpperCase() === code);
+  }, [customerCodeInput, customersList]);
 
   async function handleSubmit(formData: FormData) {
     setFeedback(null);
@@ -255,7 +272,7 @@ export function AllotPlotModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Allot Plot — Register Buyer">
+    <Modal open={open} onClose={onClose} title="Sell Plot — Complete Sale">
       <form action={handleSubmit} className="space-y-4">
         {feedback && (
           <div
@@ -280,57 +297,185 @@ export function AllotPlotModal({
           >
             {plots.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.plot_number} ({p.plot_code}) — {p.project_name} — ₹{p.total_price.toLocaleString("en-IN")}
+                {p.plot_number} — {p.project_name} — ₹{p.total_price.toLocaleString("en-IN")}
               </option>
             ))}
           </Select>
           {feedback?.errors?.plot_id && <p className="text-xs text-rose-600 mt-1">{feedback.errors.plot_id}</p>}
         </div>
 
-        <div className="border-t border-line pt-4">
-          <p className="text-xs font-bold uppercase text-ink-muted mb-3 tracking-wide">Buyer Details (New Customer Registration)</p>
-
-          <div className="space-y-3">
-            {/* Name */}
-            <div>
-              <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Full Name *</label>
-              <Input name="customer_name" placeholder="e.g. Rajesh Kumar" required autoComplete="off" />
-              {feedback?.errors?.customer_name && <p className="text-xs text-rose-600 mt-1">{feedback.errors.customer_name}</p>}
-            </div>
-
-            {/* Mobile */}
-            <div>
-              <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Mobile Number *</label>
-              <Input name="customer_mobile" placeholder="10-digit mobile" inputMode="numeric" required autoComplete="off" />
-              {feedback?.errors?.customer_mobile && <p className="text-xs text-rose-600 mt-1">{feedback.errors.customer_mobile}</p>}
-            </div>
-
-            {/* Customer Type */}
-            <div>
-              <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Customer Type</label>
-              <Select name="customer_type" defaultValue="Investor">
-                <option value="Investor">Investor</option>
-                <option value="User">User</option>
-              </Select>
-            </div>
-
-            {/* Aadhaar */}
-            <div>
-              <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Aadhaar Number (Last 4 digits stored)</label>
-              <Input name="customer_aadhaar" placeholder="12-digit Aadhaar" inputMode="numeric" autoComplete="off" />
-            </div>
+        {/* Buyer Selection Mode */}
+        <div className="border-t border-line pt-4 space-y-3">
+          <p className="text-xs font-bold uppercase text-ink-muted tracking-wide">Buyer Selection</p>
+          <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1 text-xs font-semibold text-gray-700 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => setBuyerMode("new")}
+              className={`flex-1 rounded-md py-1.5 transition ${buyerMode === "new" ? "bg-white shadow text-gray-900 font-bold" : "text-gray-500 hover:text-gray-900"}`}
+            >
+              + New Customer
+            </button>
+            <button
+              type="button"
+              onClick={() => setBuyerMode("existing")}
+              className={`flex-1 rounded-md py-1.5 transition ${buyerMode === "existing" ? "bg-white shadow text-gray-900 font-bold" : "text-gray-500 hover:text-gray-900"}`}
+            >
+              Existing Customer ({customersList.length})
+            </button>
           </div>
+
+          {buyerMode === "existing" ? (
+            <div className="space-y-2 bg-[#f8f9fa] p-3 rounded-lg border border-[#e0e0e0]">
+              <label className="block text-xs font-semibold uppercase text-ink-muted">Enter Buyer Customer ID or Mobile *</label>
+              <Input
+                value={buyerCodeInput}
+                onChange={(e) => setBuyerCodeInput(e.target.value.toUpperCase())}
+                placeholder="e.g. TM0001 or mobile number"
+                autoComplete="off"
+                required
+              />
+              <input
+                type="hidden"
+                name="existing_customer_id"
+                value={matchedBuyer ? matchedBuyer.id : ""}
+              />
+              {buyerCodeInput.trim() ? (
+                matchedBuyer ? (
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-md border border-emerald-200">
+                    <span>✓ Buyer Found:</span>
+                    <span className="font-bold">{matchedBuyer.name}</span>
+                    <span className="text-emerald-600">({matchedBuyer.customer_code})</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 px-3 py-2 rounded-md border border-amber-200">
+                    <span>⚠ No customer found matching ID &quot;{buyerCodeInput.toUpperCase()}&quot;</span>
+                  </div>
+                )
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Full Name *</label>
+                <Input name="customer_name" placeholder="e.g. Rajesh Kumar" required={buyerMode === "new"} autoComplete="off" />
+                {feedback?.errors?.customer_name && <p className="text-xs text-rose-600 mt-1">{feedback.errors.customer_name}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Mobile Number *</label>
+                <Input name="customer_mobile" placeholder="10-digit mobile" inputMode="numeric" required={buyerMode === "new"} autoComplete="off" />
+                {feedback?.errors?.customer_mobile && <p className="text-xs text-rose-600 mt-1">{feedback.errors.customer_mobile}</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Customer Type</label>
+                  <Select name="customer_type" defaultValue="Investor">
+                    <option value="Investor">Investor</option>
+                    <option value="User">User</option>
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Aadhaar (Last 4 digits stored)</label>
+                  <Input name="customer_aadhaar" placeholder="12-digit Aadhaar" inputMode="numeric" autoComplete="off" />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Member Invite Code */}
-        <div className="border-t border-line pt-4">
-          <p className="text-xs font-bold uppercase text-ink-muted mb-3 tracking-wide">Member Invite Code (Optional)</p>
-          <div>
-            <label className="block text-xs font-semibold uppercase text-ink-muted mb-1">Invite Code (Optional)</label>
-            <Input name="invite_code" placeholder="e.g. 3C001" autoComplete="off" />
-            <p className="text-xs text-ink-muted mt-1">Enter Member ID / Invite Code if referred by an agent, or leave empty for direct allotment.</p>
-            {feedback?.errors?.invite_code && <p className="text-xs text-rose-600 mt-1">{feedback.errors.invite_code}</p>}
+        {/* Referral / Member Source */}
+        <div className="border-t border-line pt-4 space-y-3">
+          <p className="text-xs font-bold uppercase text-ink-muted tracking-wide">Referral Source</p>
+          <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1 text-xs font-semibold text-gray-700 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => setReferralType("none")}
+              className={`flex-1 rounded-md py-1.5 transition ${referralType === "none" ? "bg-white shadow text-gray-900 font-bold" : "text-gray-500 hover:text-gray-900"}`}
+            >
+              3% Club (Direct)
+            </button>
+            <button
+              type="button"
+              onClick={() => setReferralType("member")}
+              className={`flex-1 rounded-md py-1.5 transition ${referralType === "member" ? "bg-white shadow text-gray-900 font-bold" : "text-gray-500 hover:text-gray-900"}`}
+            >
+              Member
+            </button>
+            <button
+              type="button"
+              onClick={() => setReferralType("customer")}
+              className={`flex-1 rounded-md py-1.5 transition ${referralType === "customer" ? "bg-white shadow text-gray-900 font-bold" : "text-gray-500 hover:text-gray-900"}`}
+            >
+              Customer Referral
+            </button>
           </div>
+
+          {referralType === "member" && (
+            <div className="space-y-2 bg-[#f8f9fa] p-3 rounded-lg border border-[#e0e0e0]">
+              <label className="block text-xs font-semibold uppercase text-ink-muted">Enter Member ID</label>
+              <Input
+                value={memberCodeInput}
+                onChange={(e) => setMemberCodeInput(e.target.value.toUpperCase())}
+                placeholder="e.g. 3C005"
+                autoComplete="off"
+              />
+              <input
+                type="hidden"
+                name="referring_member_id"
+                value={matchedMember ? matchedMember.id : ""}
+              />
+              <input
+                type="hidden"
+                name="invite_code"
+                value={memberCodeInput}
+              />
+              {memberCodeInput.trim() ? (
+                matchedMember ? (
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-md border border-emerald-200">
+                    <span>✓ Member Found:</span>
+                    <span className="font-bold">{matchedMember.name}</span>
+                    <span className="text-emerald-600">({matchedMember.member_code})</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 px-3 py-2 rounded-md border border-amber-200">
+                    <span>⚠ No member found with Member ID &quot;{memberCodeInput.toUpperCase()}&quot;</span>
+                  </div>
+                )
+              ) : null}
+            </div>
+          )}
+
+          {referralType === "customer" && (
+            <div className="space-y-2 bg-[#f8f9fa] p-3 rounded-lg border border-[#e0e0e0]">
+              <label className="block text-xs font-semibold uppercase text-ink-muted">Enter Referring Customer ID</label>
+              <Input
+                value={customerCodeInput}
+                onChange={(e) => setCustomerCodeInput(e.target.value.toUpperCase())}
+                placeholder="e.g. TM0001"
+                autoComplete="off"
+                required
+              />
+              <input
+                type="hidden"
+                name="referring_customer_id"
+                value={matchedCustomer ? matchedCustomer.id : ""}
+              />
+              {customerCodeInput.trim() ? (
+                matchedCustomer ? (
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-md border border-emerald-200">
+                    <span>✓ Customer Found:</span>
+                    <span className="font-bold">{matchedCustomer.name}</span>
+                    <span className="text-emerald-600">({matchedCustomer.customer_code})</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 px-3 py-2 rounded-md border border-amber-200">
+                    <span>⚠ No customer found with Customer ID &quot;{customerCodeInput.toUpperCase()}&quot;</span>
+                  </div>
+                )
+              ) : null}
+            </div>
+          )}
         </div>
 
         {/* Notes */}
@@ -343,7 +488,7 @@ export function AllotPlotModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <SubmitBtn label="Register Buyer & Allot Plot" />
+          <SubmitBtn label="Confirm Sale" />
         </div>
       </form>
     </Modal>

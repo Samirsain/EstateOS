@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Card, PageHeader, LinkButton } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { can, requirePermission } from "@/lib/auth";
 import {
   listActiveMembersForSelect,
@@ -7,11 +7,10 @@ import {
   listPlotAllotments,
   listPlots,
   listProjects,
-  getDashboardStats,
 } from "@/lib/queries";
 import { PlotsManager } from "./plots-manager";
 
-export const metadata: Metadata = { title: "Plots Inventory & Allotment" };
+export const metadata: Metadata = { title: "Plots Inventory & Sales" };
 export const dynamic = "force-dynamic";
 
 export default async function PlotsPage() {
@@ -60,9 +59,8 @@ export default async function PlotsPage() {
   return (
     <>
       <PageHeader
-        title="Plot Inventory & Allotment"
-        description="Real-time layout inventory tracking, plot status control, and buyer allotments."
-        action={canCreatePlot ? <LinkButton href="#add-plot">+ Add Plot</LinkButton> : undefined}
+        title="Plot Inventory & Sales"
+        description="Real-time layout inventory tracking, plot status control, and buyer sales."
       />
 
       {/* Stats Strip — compact */}
@@ -85,19 +83,19 @@ export default async function PlotsPage() {
           <p className="mt-0.5 text-[11px] text-amber-400">Reserved / Pending</p>
         </div>
 
-        <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-500">Allotted</p>
-          <p className="mt-1 text-2xl font-semibold text-blue-600">{stats.allottedPlots}</p>
-          <p className="mt-0.5 text-[11px] text-blue-400">{allottedPct}% sold</p>
+        <div className="rounded-xl border border-rose-100 bg-rose-50/50 px-4 py-3 shadow-sm">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-rose-500">Sold Plots</p>
+          <p className="mt-1 text-2xl font-semibold text-rose-600">{stats.allottedPlots}</p>
+          <p className="mt-0.5 text-[11px] text-rose-400">{allottedPct}% sold</p>
         </div>
       </div>
 
 
       {/* Main Manager View */}
       <PlotsManager
-        initialPlots={JSON.parse(JSON.stringify(plots))}
-        projects={JSON.parse(JSON.stringify(projects))}
-        allotments={JSON.parse(JSON.stringify(allotments))}
+        initialPlots={plots}
+        projects={projects}
+        allotments={allotments}
         customers={customers.map((c) => ({ id: c.id, customer_code: c.customer_code, name: c.name }))}
         members={members.map((m) => ({ id: m.id, member_code: m.member_code, name: m.name }))}
         canCreatePlot={canCreatePlot}

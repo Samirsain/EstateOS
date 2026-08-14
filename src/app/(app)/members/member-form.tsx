@@ -1,9 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import React, { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import {
   Alert,
   Button,
@@ -25,6 +24,9 @@ export interface MemberFormValues {
   companyName: string;
   dealsIn: string[];
   experience: string;
+  reraNo?: string;
+  email?: string;
+  referredByMemberId?: string;
   aadhaar: string;
 }
 
@@ -36,6 +38,9 @@ const EMPTY_VALUES: MemberFormValues = {
   companyName: "",
   dealsIn: [],
   experience: "",
+  reraNo: "",
+  email: "",
+  referredByMemberId: "",
   aadhaar: "",
 };
 
@@ -59,9 +64,11 @@ function SubmitButton({ label }: { label: string }) {
 export function MemberForm({
   mode,
   values = EMPTY_VALUES,
+  activeMembers = [],
 }: {
   mode: "create" | "edit";
   values?: MemberFormValues;
+  activeMembers?: Array<{ id: number; name: string; member_code: string }>;
 }) {
   const action = mode === "create" ? createMemberAction : updateMemberAction;
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -69,6 +76,21 @@ export function MemberForm({
     EMPTY_ACTION_STATE,
   );
   const router = useRouter();
+
+  const initialMember = activeMembers.find(
+    (m) => String(m.id) === String(values.referredByMemberId)
+  );
+  const [referralCodeInput, setReferralCodeInput] = React.useState(
+    initialMember ? initialMember.member_code : ""
+  );
+
+  const matchedMember = React.useMemo(() => {
+    const code = referralCodeInput.trim().toUpperCase();
+    if (!code) return null;
+    return activeMembers.find(
+      (m) => m.member_code.toUpperCase() === code
+    );
+  }, [referralCodeInput, activeMembers]);
 
   useEffect(() => {
     if (state.ok && state.createdCode) {
@@ -157,10 +179,63 @@ export function MemberForm({
           </Select>
         </Field>
 
+        <Field label="RERA Registration No." name="reraNo">
+          <Input
+            id="reraNo"
+            name="reraNo"
+            defaultValue={values.reraNo}
+            placeholder="e.g. RAJ/P/2024/001"
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field label="Email address" name="email">
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            inputMode="email"
+            defaultValue={values.email}
+            placeholder="e.g. name@example.com"
+            autoComplete="email"
+          />
+        </Field>
+
+        <Field label="Referred by Member ID" name="referredByMemberCode" hint="Enter member code (e.g. 3C005) or leave blank for 3% Club.">
+          <Input
+            id="referralCodeInput"
+            value={referralCodeInput}
+            onChange={(e) => setReferralCodeInput(e.target.value.toUpperCase())}
+            placeholder="e.g. 3C005"
+            autoComplete="off"
+          />
+          <input
+            type="hidden"
+            name="referredByMemberId"
+            value={matchedMember ? String(matchedMember.id) : ""}
+          />
+          {referralCodeInput.trim() ? (
+            matchedMember ? (
+              <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-md border border-emerald-200">
+                <span>✓ Member Found:</span>
+                <span className="font-bold">{matchedMember.name}</span>
+                <span className="text-emerald-600">({matchedMember.member_code})</span>
+              </div>
+            ) : (
+              <div className="mt-2 flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 px-3 py-2 rounded-md border border-amber-200">
+                <span>⚠ No member found matching Member ID &quot;{referralCodeInput.toUpperCase()}&quot;</span>
+              </div>
+            )
+          ) : (
+            <div className="mt-1.5 text-xs text-ink-muted">
+              Direct / Self-registered (<strong>3% Club</strong>)
+            </div>
+          )}
+        </Field>
+
         <Field
           label="Aadhaar number"
           name="aadhaar"
-          required
           error={state.errors?.aadhaar}
           hint="Stored encrypted; only the last 4 digits are shown afterwards."
         >
@@ -170,14 +245,13 @@ export function MemberForm({
             inputMode="numeric"
             defaultValue={values.aadhaar}
             autoComplete="off"
-            required
           />
         </Field>
       </div>
 
       <fieldset>
         <legend className="text-sm font-medium text-ink">
-          Deals in<span className="ml-0.5 text-danger">*</span>
+          Deals in
         </legend>
         <div className="mt-2 flex flex-wrap gap-2">
           {DEALS_IN_OPTIONS.map((option) => (

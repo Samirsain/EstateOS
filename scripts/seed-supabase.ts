@@ -16,6 +16,7 @@ function hashPassword(password: string): string {
   return `scrypt$${salt.toString("base64url")}$${derived.toString("base64url")}`;
 }
 
+// Keep in step with ALL_PERMISSIONS / PC_RESTRICTED_DEFAULTS in src/lib/auth.ts.
 const ALL_PERMISSIONS = [
   "dashboard.view",
   "plots.view",
@@ -26,8 +27,11 @@ const ALL_PERMISSIONS = [
   "plots.allot",
   "members.view",
   "members.create",
+  "members.edit",
+  "members.delete",
   "customers.view",
   "customers.create",
+  "customers.delete",
   "customers.transfer",
   "settings.manage",
 ];
@@ -36,6 +40,8 @@ const ALL_PERMISSIONS = [
 const PC_RESTRICTED = new Set([
   "settings.manage",
   "customers.transfer",
+  "customers.delete",
+  "members.delete",
   "projects.create",
   "projects.delete",
   "plots.delete",
@@ -51,12 +57,10 @@ async function main() {
     where: { role: "MD" },
   });
 
-  let mdId: number;
   if (existingMd) {
-    mdId = existingMd.id;
     console.log(`✅ MD user already exists (username: ${existingMd.username})`);
   } else {
-    const md = await prisma.users.create({
+    await prisma.users.create({
       data: {
         username: "md",
         name: "Managing Director",
@@ -65,7 +69,6 @@ async function main() {
         is_active: 1,
       },
     });
-    mdId = md.id;
     console.log(`✅ MD user created  →  md / ${mdPassword}`);
   }
 

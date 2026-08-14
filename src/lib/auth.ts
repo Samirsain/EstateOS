@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sessionCookieName, verifySession } from "./session";
 import type { Role, SessionUser } from "./types";
-import { getDb, ensureDbSetup } from "./db";
+import { getDb } from "./db";
 
 export interface PermissionDefinition {
   key: string;
@@ -20,9 +20,12 @@ export const ALL_PERMISSIONS: PermissionDefinition[] = [
   { key: "projects.delete", label: "Delete Real Estate Projects", category: "Plots Inventory" },
   { key: "plots.allot", label: "Allot / Book Plots to Customers", category: "Plots Inventory" },
   { key: "members.view", label: "View Members List", category: "Members" },
-  { key: "members.create", label: "Create & Edit Members", category: "Members" },
+  { key: "members.create", label: "Register New Members", category: "Members" },
+  { key: "members.edit", label: "Edit Member Details", category: "Members" },
+  { key: "members.delete", label: "Deactivate, Blacklist & Delete Members", category: "Members" },
   { key: "customers.view", label: "View Customers List", category: "Customers" },
   { key: "customers.create", label: "Register New Customers", category: "Customers" },
+  { key: "customers.delete", label: "Blacklist & Delete Customers", category: "Customers" },
   { key: "customers.transfer", label: "Transfer Customer Referrals", category: "Customers" },
   { key: "settings.manage", label: "Manage System Settings & Permissions", category: "Settings" },
 ];
@@ -31,26 +34,32 @@ export type Permission = (typeof ALL_PERMISSIONS)[number]["key"];
 
 import { cache } from "react";
 
+/** Permissions a PC does not get unless the MD ticks them on in Settings. */
+export const PC_RESTRICTED_DEFAULTS = [
+  "settings.manage",
+  "customers.transfer",
+  "customers.delete",
+  "members.delete",
+  "projects.create",
+  "projects.delete",
+  "plots.delete",
+];
+
 /** Cached role permissions set per request */
 export const getRolePermissions = cache(async (role: Role): Promise<Set<string>> => {
   if (role === "MD") {
     return new Set(ALL_PERMISSIONS.map((p) => p.key));
   }
-  try {
-    const db = await getDb();
-    const rows = await db.role_permissions.findMany({
-      where: { role, allowed: 1 },
-      select: { permission: true },
-    });
-    return new Set(rows.map((r) => r.permission));
-  } catch {
-    // Default fallback for PC if DB unreachable
-    return new Set(
-      ALL_PERMISSIONS.filter(
-        (p) => !["settings.manage", "customers.transfer", "projects.create", "projects.delete", "plots.delete"].includes(p.key)
-      ).map((p) => p.key)
-    );
-  }
+  /* Deliberately not wrapped in a try/catch: if the permission table cannot be
+     read we must not guess a permissive default. Every caller needs the same
+     database anyway, so a read failure here is a hard failure, not a reason to
+     hand a PC more access than the MD configured. */
+  const db = await getDb();
+  const rows = await db.role_permissions.findMany({
+    where: { role, allowed: 1 },
+    select: { permission: true },
+  });
+  return new Set(rows.map((r) => r.permission));
 });
 
 /** Checks dynamic permission in the DB role_permissions table. */
@@ -69,12 +78,7 @@ export async function getRolePermissionsMatrix(): Promise<{
   pcAllowed: boolean;
 }[]> {
   const db = await getDb();
-  let rows: { role: string; permission: string; allowed: number }[] = [];
-  try {
-    rows = await db.role_permissions.findMany();
-  } catch {
-    rows = [];
-  }
+  const rows = await db.role_permissions.findMany();
 
   const permMap: Record<string, { MD: boolean; PC: boolean }> = {};
 
@@ -91,7 +95,7 @@ export async function getRolePermissionsMatrix(): Promise<{
     label: item.label,
     category: item.category,
     mdAllowed: permMap[item.key]?.MD ?? true,
-    pcAllowed: permMap[item.key]?.PC ?? (item.key !== "settings.manage" && item.key !== "customers.transfer"),
+    pcAllowed: permMap[item.key]?.PC ?? !PC_RESTRICTED_DEFAULTS.includes(item.key),
   }));
 }
 

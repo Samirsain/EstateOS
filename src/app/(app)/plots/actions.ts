@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import { assertPermission } from "@/lib/auth";
+import { checkBlacklist } from "@/lib/blacklist";
+import { recalcRoyaltyStatus } from "@/lib/referrals";
 import { getDb } from "@/lib/db";
 import { nextAllotmentCode, nextCustomerCode, nextPlotCode, nextProjectCode } from "@/lib/ids";
 import type { ActionState } from "@/lib/types";
@@ -14,12 +16,12 @@ export async function createProjectAction(
   try {
     const user = await assertPermission("projects.create");
 
-    const name = String(formData.get("name") ?? "").trim();
-    const location = String(formData.get("location") ?? "").trim();
+    const name = String(formData.get("name") ?? "").trim().toUpperCase();
+    const location = String(formData.get("location") ?? "").trim().toUpperCase();
     const totalPlotsStr = String(formData.get("total_plots") ?? "0").trim();
     const status = String(formData.get("status") ?? "Active").trim();
-    const projectType = String(formData.get("project_type") ?? "Residential").trim();
-    const description = String(formData.get("description") ?? "").trim();
+    const projectType = String(formData.get("project_type") ?? "Township").trim();
+    const description = String(formData.get("description") ?? "").trim().toUpperCase();
 
     const errors: Record<string, string> = {};
     if (!name) errors.name = "Project name is required.";
@@ -67,19 +69,20 @@ export async function createPlotAction(
     const user = await assertPermission("plots.create");
 
     const projectIdStr = String(formData.get("project_id") ?? "").trim();
-    const plotNumber = String(formData.get("plot_number") ?? "").trim();
-    const block = String(formData.get("block") ?? "").trim();
+    const plotNumber = String(formData.get("plot_number") ?? "").trim().toUpperCase();
+    const block = String(formData.get("block") ?? "").trim().toUpperCase();
     const sizeSqftStr = String(formData.get("size_sqft") ?? "0").trim();
+    const totalPriceStr = String(formData.get("total_price") ?? "0").trim();
     const ratePerSqftStr = String(formData.get("rate_per_sqft") ?? "0").trim();
     const facing = String(formData.get("facing") ?? "").trim();
     const plotType = String(formData.get("plot_type") ?? "Residential").trim();
-    const notes = String(formData.get("notes") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim().toUpperCase();
 
     const errors: Record<string, string> = {};
     if (!projectIdStr) errors.project_id = "Please select a project.";
     if (!plotNumber) errors.plot_number = "Plot number is required.";
     if (!sizeSqftStr || Number(sizeSqftStr) <= 0) errors.size_sqft = "Valid size in sq.ft is required.";
-    if (!ratePerSqftStr || Number(ratePerSqftStr) <= 0) errors.rate_per_sqft = "Valid rate per sq.ft is required.";
+    if (!totalPriceStr && !ratePerSqftStr) errors.total_price = "Total plot price is required.";
 
     if (Object.keys(errors).length > 0) {
       return { ok: false, message: "Please resolve form errors.", errors };
@@ -87,8 +90,14 @@ export async function createPlotAction(
 
     const projectId = Number(projectIdStr);
     const sizeSqft = Number(sizeSqftStr);
-    const ratePerSqft = Number(ratePerSqftStr);
-    const totalPrice = sizeSqft * ratePerSqft;
+    let totalPrice = Number(totalPriceStr) || 0;
+    let ratePerSqft = Number(ratePerSqftStr) || 0;
+
+    if (totalPrice > 0 && ratePerSqft === 0 && sizeSqft > 0) {
+      ratePerSqft = Math.round(totalPrice / sizeSqft);
+    } else if (ratePerSqft > 0 && totalPrice === 0 && sizeSqft > 0) {
+      totalPrice = sizeSqft * ratePerSqft;
+    }
 
     const db = await getDb();
     const plotCode = await nextPlotCode();
@@ -139,19 +148,26 @@ export async function allotPlotAction(
     const user = await assertPermission("plots.allot");
 
     const plotIdStr = String(formData.get("plot_id") ?? "").trim();
+    const existingCustomerIdStr = String(formData.get("existing_customer_id") ?? "").trim();
+    const referringMemberIdStr = String(formData.get("referring_member_id") ?? "").trim();
+    const referringCustomerIdStr = String(formData.get("referring_customer_id") ?? "").trim();
+
     // Customer fields (inline registration)
-    const customerName = String(formData.get("customer_name") ?? "").trim();
+    const customerName = String(formData.get("customer_name") ?? "").trim().toUpperCase();
     const customerMobile = String(formData.get("customer_mobile") ?? "").trim();
     const customerType = String(formData.get("customer_type") ?? "User").trim();
     const customerAadhaar = String(formData.get("customer_aadhaar") ?? "").trim();
-    const inviteCode = String(formData.get("invite_code") ?? "").trim();
-    const notes = String(formData.get("notes") ?? "").trim();
+    const inviteCode = String(formData.get("invite_code") ?? "").trim().toUpperCase();
+    const notes = String(formData.get("notes") ?? "").trim().toUpperCase();
 
     const errors: Record<string, string> = {};
     if (!plotIdStr) errors.plot_id = "Please select a plot.";
-    if (!customerName) errors.customer_name = "Buyer name is required.";
-    if (!customerMobile || !/^\d{10}$/.test(customerMobile.replace(/\D/g, "")))
-      errors.customer_mobile = "Valid 10-digit mobile number is required.";
+
+    if (!existingCustomerIdStr) {
+      if (!customerName) errors.customer_name = "Buyer name is required.";
+      if (!customerMobile || !/^\d{10}$/.test(customerMobile.replace(/\D/g, "")))
+        errors.customer_mobile = "Valid 10-digit mobile number is required.";
+    }
 
     if (Object.keys(errors).length > 0) {
       return { ok: false, message: "Please resolve form errors.", errors };
@@ -164,60 +180,125 @@ export async function allotPlotAction(
       where: { id: Number(plotIdStr) },
     });
     if (!plot) return { ok: false, message: "Selected plot not found." };
-    if (plot.status === "Allotted" || plot.status === "Booked") {
-      return { ok: false, message: "This plot is already allotted." };
+    if (plot.status === "Allotted" || plot.status === "Booked" || plot.status === "Sold") {
+      return { ok: false, message: "This plot is already sold." };
     }
 
-    // Lookup referring member if invite code provided
+    // Determine referring member (Agent / Customer-to-Customer / Direct)
     let memberId: number | null = null;
-    let inviteCodeVal = inviteCode || "DIRECT";
+    let inviteCodeVal = inviteCode || "3% Club";
 
-    if (inviteCode) {
+    if (referringMemberIdStr) {
+      const member = await db.members.findUnique({ where: { id: Number(referringMemberIdStr) } });
+      if (member) {
+        memberId = member.id;
+        inviteCodeVal = member.invite_code;
+      }
+    } else if (referringCustomerIdStr) {
+      const refCustomer = await db.customers.findUnique({ where: { id: Number(referringCustomerIdStr) } });
+      if (refCustomer) {
+        memberId = refCustomer.member_id || null;
+        inviteCodeVal = `CUSTOMER_${refCustomer.customer_code}`;
+      }
+    } else if (inviteCode) {
       const member = await db.members.findFirst({
         where: { invite_code: inviteCode, is_active: 1 },
       });
-      if (!member) {
-        return { ok: false, message: "Member invite code not found or inactive.", errors: { invite_code: "Member not found." } };
+      if (member) {
+        memberId = member.id;
+        inviteCodeVal = member.invite_code;
       }
-      memberId = member.id;
     }
 
-    // Create customer record
-    const customerCode = await nextCustomerCode();
-    const mobile10 = customerMobile.replace(/\D/g, "").slice(-10);
+    let finalCustomerId: number;
+    let finalCustomerName: string;
+    let finalCustomerCode: string;
 
-    const aadhaarDigits = customerAadhaar.replace(/\D/g, "");
-    const aadhaarLast4 = aadhaarDigits.slice(-4) || "0000";
-    const { encryptField, blindIndex } = await import("@/lib/crypto");
-    const aadhaarEncrypted = aadhaarDigits ? encryptField(aadhaarDigits) : "";
-    const aadhaarIdx = aadhaarDigits ? blindIndex(aadhaarDigits) : `NO_AADHAAR_${customerCode}_${Date.now()}`;
+    if (existingCustomerIdStr) {
+      const existingCustomer = await db.customers.findUnique({
+        where: { id: Number(existingCustomerIdStr) },
+      });
+      if (!existingCustomer) return { ok: false, message: "Selected customer record not found." };
 
-    // Check for duplicate mobile
-    const mobileClash = await db.customers.findUnique({
-      where: { mobile: mobile10 },
-    });
-    if (mobileClash) {
-      return {
-        ok: false,
-        message: `Mobile already registered to customer ${mobileClash.customer_code}.`,
-        errors: { customer_mobile: "Already registered." },
-      };
-    }
+      /* Existing buyers are screened too — otherwise picking a saved customer
+         from the dropdown would walk straight past the blacklist. */
+      if (existingCustomer.is_blacklisted) {
+        return {
+          ok: false,
+          message: `Allotment blocked: ${existingCustomer.name} (${existingCustomer.customer_code}) is blacklisted.`,
+        };
+      }
+      const existingVerdict = await checkBlacklist({
+        mobile: existingCustomer.mobile,
+        name: existingCustomer.name,
+        ignoreEntity: { type: "CUSTOMER", id: existingCustomer.id },
+      });
+      if (existingVerdict.blocked) {
+        return { ok: false, message: `Allotment blocked. ${existingVerdict.message}` };
+      }
 
-    const createdCustomer = await db.customers.create({
-      data: {
-        customer_code: customerCode,
-        name: customerName,
+      finalCustomerId = existingCustomer.id;
+      finalCustomerName = existingCustomer.name;
+      finalCustomerCode = existingCustomer.customer_code;
+    } else {
+      // Create new customer record
+      const customerCode = await nextCustomerCode();
+      const mobile10 = customerMobile.replace(/\D/g, "").slice(-10);
+
+      const aadhaarDigits = customerAadhaar.replace(/\D/g, "");
+      const aadhaarLast4 = aadhaarDigits.slice(-4) || "0000";
+      const { encryptField, blindIndex } = await import("@/lib/crypto");
+      const aadhaarEncrypted = aadhaarDigits ? encryptField(aadhaarDigits) : "";
+      const aadhaarIdx = aadhaarDigits ? blindIndex(aadhaarDigits) : `NO_AADHAAR_${customerCode}_${Date.now()}`;
+
+      // Check for duplicate mobile
+      const mobileClash = await db.customers.findUnique({
+        where: { mobile: mobile10 },
+      });
+      if (mobileClash) {
+        return {
+          ok: false,
+          message: `Mobile already registered to customer ${mobileClash.customer_code} (${mobileClash.name}). Select 'Existing Customer' to assign plot to them.`,
+          errors: { customer_mobile: "Already registered." },
+        };
+      }
+
+      // Global blacklist verification — mobile, Aadhaar hash and name+city.
+      const verdict = await checkBlacklist({
         mobile: mobile10,
-        customer_type: customerType,
-        aadhaar_encrypted: aadhaarEncrypted,
-        aadhaar_index: aadhaarIdx,
-        aadhaar_last4: aadhaarLast4,
-        member_id: memberId,
-        invite_code: inviteCodeVal,
-        created_by: user.id,
-      },
-    });
+        aadhaar: aadhaarDigits,
+        name: customerName,
+      });
+      if (verdict.blocked) {
+        return {
+          ok: false,
+          message: `Allotment blocked. ${verdict.message}`,
+          errors:
+            verdict.factor === "mobile"
+              ? { customer_mobile: "Blacklisted buyer." }
+              : { customer_name: "Matches a blacklisted record." },
+        };
+      }
+
+      const createdCustomer = await db.customers.create({
+        data: {
+          customer_code: customerCode,
+          name: customerName,
+          mobile: mobile10,
+          customer_type: customerType,
+          aadhaar_encrypted: aadhaarEncrypted,
+          aadhaar_index: aadhaarIdx,
+          aadhaar_last4: aadhaarLast4,
+          member_id: memberId,
+          invite_code: inviteCodeVal,
+          created_by: user.id,
+        },
+      });
+
+      finalCustomerId = createdCustomer.id;
+      finalCustomerName = createdCustomer.name;
+      finalCustomerCode = createdCustomer.customer_code;
+    }
 
     const allotmentCode = await nextAllotmentCode();
     const price = Number(plot.total_price) || 0;
@@ -227,25 +308,28 @@ export async function allotPlotAction(
       data: {
         allotment_code: allotmentCode,
         plot_id: plot.id,
-        customer_id: createdCustomer.id,
+        customer_id: finalCustomerId,
         member_id: memberId,
         agreed_price: price,
-        booking_amount: 0,
+        booking_amount: price,
         payment_status: "Completed",
         notes: notes || null,
         created_by: user.id,
       },
     });
 
-    // Mark plot as Allotted
+    // Mark plot as Sold
     await db.plots.update({
       where: { id: plot.id },
-      data: { status: "Allotted" },
+      data: { status: "Sold" },
     });
+
+    // Royalty milestone: 5 distinct customers who have actually purchased.
+    await recalcRoyaltyStatus(memberId);
 
     await recordAudit({
       actor: user,
-      action: "plot.allotted",
+      action: "plot.sold",
       entity: "plot_allotment",
       entityRef: allotmentCode,
     });
@@ -256,11 +340,11 @@ export async function allotPlotAction(
     revalidatePath("/members");
     return {
       ok: true,
-      message: `Plot ${plot.plot_number} allotted to ${customerName} (${customerCode})!`,
+      message: `Plot ${plot.plot_number} sold to ${finalCustomerName} (${finalCustomerCode}) successfully!`,
       createdCode: allotmentCode,
     };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to allot plot." };
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to process plot sale." };
   }
 }
 
@@ -273,7 +357,7 @@ export async function updatePlotStatusAction(
     const db = await getDb();
 
     await db.plots.updateMany({
-      where: { id: plotId, status: { not: "Allotted" } },
+      where: { id: plotId, status: { notIn: ["Allotted", "Booked", "Sold"] } },
       data: { status: newStatus },
     });
 
@@ -282,6 +366,49 @@ export async function updatePlotStatusAction(
     return { ok: true, message: `Plot status updated to ${newStatus}.` };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Failed to update status." };
+  }
+}
+
+export async function cancelAllotmentAction(plotId: number): Promise<ActionState> {
+  try {
+    const user = await assertPermission("plots.delete");
+    const db = await getDb();
+
+    const plot = await db.plots.findUnique({
+      where: { id: plotId },
+      include: { allotment: true },
+    });
+    if (!plot) return { ok: false, message: "Plot not found." };
+    if (!plot.allotment) return { ok: false, message: "No active allotment found for this plot." };
+
+    const affectedMemberId = plot.allotment.member_id;
+
+    // Delete allotment record
+    await db.plot_allotments.delete({ where: { plot_id: plotId } });
+
+    // Revert plot status back to Available
+    await db.plots.update({
+      where: { id: plotId },
+      data: { status: "Available" },
+    });
+
+    /* Cancelling a sale can drop the member back under the royalty threshold. */
+    await recalcRoyaltyStatus(affectedMemberId);
+
+    await recordAudit({
+      actor: user,
+      action: "allotment.cancelled",
+      entity: "plot_allotment",
+      entityRef: plot.allotment.allotment_code,
+    });
+
+    revalidatePath("/plots");
+    revalidatePath("/dashboard");
+    revalidatePath("/customers");
+    revalidatePath("/members");
+    return { ok: true, message: `Sale for plot ${plot.plot_number} cancelled. Plot is now Available.` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to cancel sale." };
   }
 }
 
@@ -294,8 +421,8 @@ export async function deletePlotAction(plotId: number): Promise<ActionState> {
       where: { id: plotId },
     });
     if (!plot) return { ok: false, message: "Plot not found." };
-    if (plot.status === "Allotted" || plot.status === "Booked") {
-      return { ok: false, message: "Cannot delete an allotted plot." };
+    if (plot.status === "Allotted" || plot.status === "Booked" || plot.status === "Sold") {
+      return { ok: false, message: "Cannot delete a sold plot. Cancel the sale first." };
     }
 
     await db.plot_allotments.deleteMany({ where: { plot_id: plotId } });
