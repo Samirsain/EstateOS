@@ -65,6 +65,9 @@ export function CreateUserForm() {
             name="password"
             type="text"
             autoComplete="new-password"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             required
           />
         </Field>
@@ -110,6 +113,9 @@ export function ResetPasswordForm({ usernames }: { usernames: string[] }) {
             name="password"
             type="text"
             autoComplete="new-password"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             required
           />
         </Field>
