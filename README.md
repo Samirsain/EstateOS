@@ -270,5 +270,95 @@ and digital products focused on performance, usability, and scalable architectur
                  ┌─────────────────────┐
                  │ Supabase PostgreSQL │
                  └─────────────────────┘
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- A [Supabase](https://supabase.com/) PostgreSQL project (or any PostgreSQL database)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/Samirsain/EstateOS.git
+cd EstateOS
+
+# Install dependencies
+npm install
+```
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+DATABASE_URL="postgresql://<user>:<password>@<host>:<port>/<database>"
+DIRECT_URL="postgresql://<user>:<password>@<host>:<port>/<database>"
+```
+
+`DATABASE_URL` is used by the app at runtime (typically pooled), while `DIRECT_URL` is used by Prisma for migrations and introspection.
+
+### Run the App
+
+```bash
+# Apply the Prisma schema and generate the client
+npx prisma db push
+
+# (Optional) seed demo data for local development
+npm run seed
+
+# Start the development server
+npm run dev
+```
+
+The app will be available at [http://localhost:3000](http://localhost:3000).
+
+### Available Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the development server |
+| `npm run build` | Generate the Prisma client and build for production |
+| `npm run start` | Start the production server |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | Run TypeScript type checking |
+| `npm run seed` | Seed demo data for local development |
+
+---
+
+## Project Structure
+
+```text
+EstateOS/
+├── prisma/            # Prisma schema
+├── public/             # Static assets
+├── scripts/            # Seed & maintenance scripts
+└── src/
+    ├── app/             # Next.js App Router routes
+    │   ├── (app)/        # Authenticated application pages
+    │   └── login/        # Authentication pages
+    ├── components/      # Shared UI components
+    └── lib/              # Auth, crypto, database & business logic
+```
+
+---
+
+## Security
+
+- Passwords are hashed with Node.js `scrypt`
+- Sensitive fields are encrypted at rest using AES-256-GCM
+- Sessions are managed via JWT-backed, HTTP-only cookies
+- Role-based access control restricts feature access by user role
+
+---
+
+## License
+
+This project is proprietary software. All rights reserved.
 
 
